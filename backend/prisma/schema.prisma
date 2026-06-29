@@ -8,11 +8,22 @@ generator client {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
+  id           String        @id @default(uuid())
+  email        String        @unique
   passwordHash String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime      @default(now())
   emails       Email[]
+  settings     UserSettings?
+}
+
+model UserSettings {
+  id        String  @id @default(uuid())
+  theme     String  @default("dark")
+  signature String?
+  autoReply Boolean @default(false)
+
+  userId    String  @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Thread {

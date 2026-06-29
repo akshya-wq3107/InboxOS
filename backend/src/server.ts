@@ -227,6 +227,96 @@ app.post('/api/webhooks/incoming', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/users/me/settings
+ * Fetches user-specific preferences. If not initialized, returns system defaults.
+ */
+app.get('/api/users/me/settings', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const settings = await prisma.userSettings.findUnique({
+      where: { userId },
+    });
+
+    if (!settings) {
+      return res.status(200).json({
+        theme: 'dark',
+        signature: null,
+        autoReply: false,
+      });
+    }
+
+    return res.status(200).json({
+      theme: settings.theme,
+      signature: settings.signature,
+      autoReply: settings.autoReply,
+    });
+  } catch (error) {
+    console.error('Fetch settings error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * PUT /api/users/me/settings
+ * Updates (or initializes) user-specific preferences, validating parameters via Zod.
+ */
+const updateSettingsSchema = z.object({
+  theme: z.string().min(1).optional(),
+  signature: z.string().nullable().optional(),
+  autoReply: z.boolean().optional(),
+});
+
+app.put('/api/users/me/settings', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const validation = updateSettingsSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid payload schema',
+        details: validation.error.flatten(),
+      });
+    }
+
+    const { theme, signature, autoReply } = validation.data;
+
+    const updatedSettings = await prisma.userSettings.upsert({
+      where: { userId },
+      update: {
+        ...(theme !== undefined && { theme }),
+        ...(signature !== undefined && { signature }),
+        ...(autoReply !== undefined && { autoReply }),
+      },
+      create: {
+        userId,
+        theme: theme ?? 'dark',
+        signature: signature ?? null,
+        autoReply: autoReply ?? false,
+      },
+    });
+
+    return res.status(200).json({
+      message: 'Settings updated successfully',
+      settings: {
+        theme: updatedSettings.theme,
+        signature: updatedSettings.signature,
+        autoReply: updatedSettings.autoReply,
+      },
+    });
+  } catch (error) {
+    console.error('Update settings error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Start Server
 const server = app.listen(PORT, () => {
   console.log(`Auth service running on port ${PORT}`);
