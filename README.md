@@ -366,9 +366,7 @@ InboxOS/
 │   ├── intelligence/           # AI classifier engines & templates
 │   ├── outputs/                # Adapters for Slack, Telegram, WhatsApp
 │   └── rules-engine/           # Evaluator DSL parser logic
-├── .gitignore                  # Git tracking rules (hidden in VS Code tree)
-├── .vscode/                    # Workspace file explorer exclusions
-│   └── settings.json
+├── .gitignore                  # Git tracking rules
 └── README.md                   # Repository Hero and Reference manual (this file)
 ```
 
