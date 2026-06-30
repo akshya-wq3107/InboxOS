@@ -1,11 +1,16 @@
 import { EventBus } from './services/event-bus.service';
 import { PrismaClient } from '@prisma/client';
 import { AIService } from './services/ai.service';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load environment variables
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('Worker starting...');
+export async function registerWorkerHandlers() {
+  console.log('Registering email processing workers...');
 
   // Subscribe to 'email.received' topic
   await EventBus.subscribe('email.received', async (payload: { emailId: string }) => {
@@ -75,10 +80,14 @@ async function main() {
     }
   });
 
-  console.log('Worker is listening for email.received events...');
+  console.log('Worker handlers registered and listening for events.');
 }
 
-main().catch((error) => {
-  console.error('Worker failed to start:', error);
-  process.exit(1);
-});
+// Only run automatically if executed directly as the entry point
+if (require.main === module || (process.argv[1] && process.argv[1].endsWith('worker.ts'))) {
+  console.log('Worker starting as standalone process...');
+  registerWorkerHandlers().catch((error) => {
+    console.error('Worker failed to start:', error);
+    process.exit(1);
+  });
+}

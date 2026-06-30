@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { EmailViewer } from './EmailViewer';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // Comprehensive mock data list to fall back on if backend is down/missing endpoint
 const FALLBACK_MOCK_EMAILS: EmailData[] = [
@@ -212,7 +212,15 @@ export const EmailList: React.FC = () => {
       if (!response.ok) {
         throw new Error('API Endpoint not available');
       }
-      return response.json();
+      
+      const json = await response.json();
+      if (json && typeof json === 'object' && 'emails' in json && Array.isArray(json.emails)) {
+        return json.emails;
+      }
+      if (Array.isArray(json)) {
+        return json;
+      }
+      throw new Error('Invalid API response format');
     },
     // Fail silently to mock data fallback so frontend is functional out of the box
     gcTime: 1000 * 60 * 10,

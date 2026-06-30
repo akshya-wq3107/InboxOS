@@ -1,3 +1,9 @@
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+// Load environment variables
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 import express, { Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
 import { PrismaClient } from '@prisma/client';
@@ -9,15 +15,27 @@ import { google } from 'googleapis';
 import crypto from 'crypto';
 import { EmailSenderService } from './services/email-sender.service';
 import { encrypt } from './utils/crypto';
+import { registerWorkerHandlers } from './worker';
+
+// If Redis is not running and we fall back to local event emitter, register worker handlers inline.
+EventBus.onFallback(() => {
+  registerWorkerHandlers().catch((err) => {
+    console.error('Failed to register inline worker handlers on EventBus fallback:', err);
+  });
+});
 
 const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 8000;
 
-// Middleware
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+  if (origin && (
+    origin === 'http://localhost' ||
+    origin.startsWith('http://localhost:') ||
+    origin === 'http://127.0.0.1' ||
+    origin.startsWith('http://127.0.0.1:')
+  )) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -63,6 +81,17 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
         email,
         passwordHash,
       },
+    });
+
+    // Generate JWT token for auto-login
+    const token = AuthService.generateToken(newUser.id, newUser.email);
+
+    // Set cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
 
     return res.status(201).json({
