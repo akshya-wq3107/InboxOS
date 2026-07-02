@@ -24,6 +24,8 @@ model UserSettings {
   theme     String  @default("dark")
   signature String?
   autoReply Boolean @default(false)
+  telegramChatId String?
+  telegramEnabled Boolean @default(false)
 
   userId    String  @unique
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)

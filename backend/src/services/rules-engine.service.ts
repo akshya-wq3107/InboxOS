@@ -2,6 +2,7 @@ import { PrismaClient, Rule, RuleCondition, RuleAction } from '@prisma/client';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
 import { EmailSenderService } from './email-sender.service';
 import { logger } from '../utils/logger';
+import { TelegramNotificationService } from './telegram-notification.service';
 
 const prisma = new PrismaClient();
 
@@ -79,6 +80,21 @@ export class RulesEngineService {
             });
           } catch (wsErr) {
             // Ignore WS errors silently
+          }
+
+          // Alert user via Telegram about rule/workflow execution
+          try {
+            const userSettings = await prisma.userSettings.findFirst({
+              where: { userId, telegramEnabled: true }
+            });
+            if (userSettings && userSettings.telegramChatId) {
+              await TelegramNotificationService.sendWorkflowFinishedAlert(
+                userSettings.telegramChatId,
+                rule.name
+              );
+            }
+          } catch (teleErr) {
+            logger.error(`[RulesEngine] Failed to send Telegram rule notification:`, teleErr);
           }
 
           // Stop at first matching rule to prevent rule collisions (standard priority rule execution)
@@ -224,6 +240,20 @@ export class RulesEngineService {
         break;
 
       case 'sendtelegram':
+        const userSettings = await prisma.userSettings.findFirst({
+          where: { userId, telegramEnabled: true }
+        });
+        if (userSettings && userSettings.telegramChatId) {
+          await TelegramNotificationService.sendImportantEmailAlert(userSettings.telegramChatId, {
+            sender: email.sender,
+            subject: email.subject,
+            summary: email.body // Pass email body content
+          });
+        } else {
+          logger.warn(`[RulesEngine] Telegram alert not sent: User settings missing or telegram disabled/unlinked for user ${userId}`);
+        }
+        break;
+
       case 'sendwhatsapp':
         // Log "not yet implemented" since adapters are missing in Node stack, but track execution successfully
         logger.warn(`[RulesEngine] Output adapter action ${actionType} is queued but unrouted on Node stack`);

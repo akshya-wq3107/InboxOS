@@ -4,6 +4,7 @@ import { AIService } from './services/ai.service';
 import { logger } from './utils/logger';
 import { emailsProcessedCounter } from './utils/metrics';
 import { RulesEngineService } from './services/rules-engine.service';
+import { TelegramNotificationService } from './services/telegram-notification.service';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
@@ -24,9 +25,10 @@ export async function registerWorkerHandlers() {
     const { emailId } = payload;
     logger.info('[Worker] Received email.received event', { emailId });
 
+    let email: any = null;
     try {
       // 1. Fetch the email from database
-      const email = await prisma.email.findUnique({
+      email = await prisma.email.findUnique({
         where: { id: emailId },
       });
 
@@ -50,6 +52,24 @@ export async function registerWorkerHandlers() {
       });
 
       logger.info('[Worker] Email classification updated successfully in database', { emailId });
+
+      // If classified as 'urgent', send Telegram alert notification if enabled
+      if (updatedEmail.category === 'urgent') {
+        try {
+          const settings = await prisma.userSettings.findFirst({
+            where: { userId: email.userId, telegramEnabled: true },
+          });
+          if (settings && settings.telegramChatId) {
+            await TelegramNotificationService.sendImportantEmailAlert(settings.telegramChatId, {
+              sender: updatedEmail.sender,
+              subject: updatedEmail.subject,
+              summary: updatedEmail.body
+            });
+          }
+        } catch (teleErr) {
+          logger.error('[Worker] Failed to send Telegram urgent email alert:', teleErr);
+        }
+      }
 
       // 3.5 Evaluate rules engine logic against the email
       try {
@@ -79,7 +99,23 @@ export async function registerWorkerHandlers() {
       // 4.5 Generate thread summary and email vector embedding
       try {
         logger.info('[Worker] Generating thread summary', { threadId: email.threadId });
-        await AIService.generateSummary(email.threadId);
+        const summary = await AIService.generateSummary(email.threadId);
+
+        // Alert Telegram about summary if enabled
+        try {
+          const settings = await prisma.userSettings.findFirst({
+            where: { userId: email.userId, telegramEnabled: true },
+          });
+          if (settings && settings.telegramChatId) {
+            await TelegramNotificationService.sendAISummaryAlert(
+              settings.telegramChatId,
+              email.subject,
+              summary
+            );
+          }
+        } catch (teleErr) {
+          logger.error('[Worker] Failed to send Telegram summary alert:', teleErr);
+        }
       } catch (sumErr: any) {
         logger.error('[Worker] Thread summarization failed', { threadId: email.threadId, error: sumErr.message || sumErr });
       }
@@ -96,6 +132,23 @@ export async function registerWorkerHandlers() {
 
     } catch (error: any) {
       logger.error('[Worker] Classification/extraction failed for email', { emailId, error: error.message || error });
+      
+      // Dispatch Telegram alert for system processing error if enabled
+      try {
+        if (email) {
+          const settings = await prisma.userSettings.findFirst({
+            where: { userId: email.userId, telegramEnabled: true },
+          });
+          if (settings && settings.telegramChatId) {
+            await TelegramNotificationService.sendSystemErrorAlert(
+              settings.telegramChatId,
+              `Classification/extraction failed for email "${email.subject}": ${error.message || error}`
+            );
+          }
+        }
+      } catch (teleErr) {
+        logger.error('[Worker] Failed to send Telegram system error alert:', teleErr);
+      }
       
       // Increment failed processing counter
       emailsProcessedCounter.inc({ status: 'failed' });

@@ -61,6 +61,13 @@ Refer to [infrastructure/config/env/.env.example](../../infrastructure/config/en
 | `GEMINI_API_KEY` | Your API key if `AI_PROVIDER` is set to `gemini`. | `AIzaSy...` |
 | `OLLAMA_BASE_URL` | The endpoint of your local Ollama server if `AI_PROVIDER` is `ollama`. | `http://localhost:11434` |
 | `JWT_SECRET` | Cryptographic secret for signing API tokens. Change this to a random 32-char string. | `change-this-to-a-random-32-char-string-in-production` |
+| `TELEGRAM_BOT_TOKEN` | Token for the Telegram Bot API credentials. | `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ` |
+| `TELEGRAM_WEBHOOK_SECRET` | Secret token to authenticate incoming requests from Telegram API. | `my-secure-webhook-secret-token` |
+| `TELEGRAM_WEBHOOK_URL` | Public base URL of your API backend server to register webhooks (leave empty for background long-polling fallback). | `https://api.yourdomain.com` |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | Comma-separated whitelist list of Telegram chat IDs authorized to interact with the bot (leave empty to allow all). | `12345678,98765432` |
+
+> [!NOTE]
+> For a step-by-step walkthrough on how to set up your own Telegram Bot for local development, refer to [TELEGRAM_SETUP.md](TELEGRAM_SETUP.md).
 
 ---
 

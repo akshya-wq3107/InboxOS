@@ -22,6 +22,8 @@ import { encrypt } from './utils/crypto';
 import { registerWorkerHandlers } from './worker';
 import { Server as SocketIoServer } from 'socket.io';
 import { WebSocketService } from './services/websocket.service';
+import { TelegramBotService } from './services/telegram-bot.service';
+import { TelegramNotificationService } from './services/telegram-notification.service';
 
 const app = express();
 const prisma = new PrismaClient();
@@ -88,10 +90,16 @@ app.use('/api', rateLimiter);
  * GET /api/health
  * Lightweight API health check endpoint.
  */
-app.get('/api/health', (req: Request, res: Response) => {
+app.get('/api/health', async (req: Request, res: Response) => {
+  const telegramHealth = await TelegramBotService.checkHealth();
   res.status(200).json({
     status: 'ok',
     timestamp: new Date(),
+    telegram: {
+      status: telegramHealth.connected ? '✅ Connected' : '❌ Disconnected',
+      webhook: telegramHealth.webhookActive ? '✅ Active' : '❌ Inactive / Polling',
+      botApi: telegramHealth.reachable ? '✅ Reachable' : '❌ Unreachable'
+    }
   });
 });
 
@@ -190,6 +198,21 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
+
+    // Dispatch Telegram security notification alert if enabled
+    try {
+      const userSettings = await prisma.userSettings.findFirst({
+        where: { userId: user.id, telegramEnabled: true }
+      });
+      if (userSettings && userSettings.telegramChatId) {
+        await TelegramNotificationService.sendAuthAlert(
+          userSettings.telegramChatId,
+          `New login detected on your InboxOS account (${user.email}) at ${new Date().toISOString()}`
+        );
+      }
+    } catch (teleErr) {
+      logger.error('Failed to send Telegram auth alert:', teleErr);
+    }
 
     return res.status(200).json({
       message: 'Logged in successfully',
@@ -372,6 +395,32 @@ app.post('/api/webhooks/incoming', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Incoming webhook error:', error);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/telegram/webhook
+ * Receives update callbacks from Telegram Bot API.
+ * Validates header secret parameter if configured.
+ */
+app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
+  const secretToken = req.headers['x-telegram-bot-api-secret-token'];
+  const configuredSecret = process.env.TELEGRAM_WEBHOOK_SECRET || '';
+
+  if (configuredSecret && secretToken !== configuredSecret) {
+    logger.warn('[TelegramBot] Rejected unauthorized webhook request (invalid x-telegram-bot-api-secret-token)');
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    // Process update asynchronously to respond immediately to Telegram
+    TelegramBotService.handleUpdate(req.body).catch((e) => {
+      logger.error('[TelegramBot] Async handleUpdate error:', e);
+    });
+    return res.status(200).json({ ok: true });
+  } catch (err: any) {
+    logger.error('[TelegramBot] Webhook exception error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
@@ -1011,6 +1060,11 @@ const server = app.listen(PORT, () => {
       console.error('Failed to register inline worker handlers on EventBus fallback:', err);
     });
   });
+
+  // Initialize Telegram Bot Service
+  TelegramBotService.init().catch((err) => {
+    logger.error('Failed to initialize Telegram Bot Service:', err);
+  });
 });
 
 // Initialize Socket.io Server with client-credentials CORS configuration
@@ -1027,5 +1081,21 @@ const io = new SocketIoServer(server, {
   }
 });
 WebSocketService.initialize(io);
+
+// Graceful Shutdown hooks
+const gracefulShutdown = () => {
+  logger.info('Received shutdown signal. Starting graceful cleanup...');
+  TelegramBotService.shutdown();
+  server.close(() => {
+    logger.info('HTTP server closed.');
+    prisma.$disconnect().then(() => {
+      logger.info('Prisma client disconnected. Exiting.');
+      process.exit(0);
+    });
+  });
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 export { app, server, prisma, io };
