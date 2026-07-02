@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { EmailRow, type EmailData } from './EmailRow';
 import { EmailSkeletonList } from './EmailSkeleton';
@@ -206,6 +206,7 @@ export const EmailList: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(10);
 
   const { socket } = useSocket();
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   // TanStack Query to fetch list from API
   const { data, isLoading, isError, refetch, isFetching } = useQuery<EmailData[]>({
@@ -315,6 +316,40 @@ export const EmailList: React.FC = () => {
     setCurrentPage(1); // Reset page on category filter change
   }, []);
 
+  // Pull-to-refresh state
+  const [pullStartY, setPullStartY] = useState<number | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (wrapperRef.current?.scrollTop === 0) {
+      setPullStartY(e.touches[0].clientY);
+      setIsPulling(true);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isPulling || pullStartY === null) return;
+    const diff = e.touches[0].clientY - pullStartY;
+    if (diff > 0) {
+      const resistance = Math.min(diff / 2, 120); // simple resistance effect
+      setPullDistance(resistance);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (isPulling) {
+      if (pullDistance > 60) {
+        // Trigger data refetch
+        refetch();
+      }
+    }
+    // Reset pull state
+    setPullStartY(null);
+    setIsPulling(false);
+    setPullDistance(0);
+  };
+
   // Intercept rendering if an email is selected
   if (selectedEmailId) {
     return (
@@ -326,7 +361,18 @@ export const EmailList: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div
+        ref={wrapperRef}
+        className="space-y-6"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{ transform: `translateY(${pullDistance}px)` }}
+      >
+        {/* Pull-to-refresh indicator */}
+        <div className="flex justify-center items-center h-8 transition-opacity duration-200" style={{ opacity: pullDistance > 0 ? 1 : 0 }}>
+          <RefreshCw size={20} className={isFetching ? 'animate-spin' : ''} />
+        </div>
       
       {/* ── Filter Tabs & Options Header ────────────────────────────────────────── */}
       <div className="flex flex-col xl:flex-row gap-4 justify-between items-start xl:items-center">

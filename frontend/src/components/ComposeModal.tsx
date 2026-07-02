@@ -172,7 +172,7 @@ export const ComposeModal: React.FC = () => {
           </div>
           <button 
             onClick={closeCompose}
-            className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
             <X size={18} />
           </button>
@@ -268,7 +268,7 @@ export const ComposeModal: React.FC = () => {
                     type="button" 
                     onClick={() => insertMarkdown('bold')}
                     title="Bold"
-                    className="p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+                    className="p-3 md:p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center"
                   >
                     <Bold size={13} />
                   </button>
@@ -276,7 +276,7 @@ export const ComposeModal: React.FC = () => {
                     type="button" 
                     onClick={() => insertMarkdown('italic')}
                     title="Italic"
-                    className="p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+                    className="p-3 md:p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center"
                   >
                     <Italic size={13} />
                   </button>
@@ -284,7 +284,7 @@ export const ComposeModal: React.FC = () => {
                     type="button" 
                     onClick={() => insertMarkdown('code')}
                     title="Code block"
-                    className="p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+                    className="p-3 md:p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center"
                   >
                     <Code size={13} />
                   </button>
@@ -292,7 +292,7 @@ export const ComposeModal: React.FC = () => {
                     type="button" 
                     onClick={() => insertMarkdown('list')}
                     title="Bullet List"
-                    className="p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+                    className="p-3 md:p-1.5 rounded hover:bg-white/5 text-gray-400 hover:text-white transition-colors min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center"
                   >
                     <List size={13} />
                   </button>
@@ -303,7 +303,7 @@ export const ComposeModal: React.FC = () => {
                   type="button"
                   onClick={triggerAiDraft}
                   disabled={isAiLoading || isSending}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-all text-[10px] font-bold border border-indigo-500/20 disabled:opacity-50"
+                  className="flex items-center gap-1 px-3 py-2 md:px-2.5 md:py-1 rounded bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-all text-[10px] font-bold border border-indigo-500/20 disabled:opacity-50 min-h-[44px] md:min-h-0"
                 >
                   {isAiLoading ? (
                     <>

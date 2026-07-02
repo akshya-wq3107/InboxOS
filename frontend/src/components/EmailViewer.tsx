@@ -273,7 +273,7 @@ export const EmailViewer: React.FC<EmailViewerProps> = ({ emailId, onBack }) => 
       <div className="flex items-center justify-between">
         <button 
           onClick={onBack}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5 transition-all text-xs font-semibold"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5 transition-all text-xs font-semibold min-h-[44px] min-w-[44px]"
         >
           <ArrowLeft size={14} />
           <span>Back to Inbound</span>
@@ -457,13 +457,13 @@ export const EmailViewer: React.FC<EmailViewerProps> = ({ emailId, onBack }) => 
                 subject: `Re: ${email.subject}`,
                 body: email.analysis?.suggested_reply || ''
               })}
-              className="flex-1 py-3.5 text-xs font-semibold rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-center transition-all glow-accent"
+              className="flex-1 py-3.5 text-xs font-semibold rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-center transition-all glow-accent min-h-[44px]"
             >
               Reply Draft
             </button>
             <button 
               onClick={() => alert('Archived Inbound.')}
-              className="px-4 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5 transition-all"
+              className="px-4 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5 transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
             >
               <Trash2 size={16} />
             </button>

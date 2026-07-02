@@ -66,7 +66,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
         {isMobile && onCloseMobileMenu && (
           <button 
             onClick={onCloseMobileMenu}
-            className="p-1 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+            className="p-3 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
             aria-label="Close menu"
           >
             <X size={20} />
@@ -81,7 +81,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
             openCompose();
             handleLinkClick();
           }}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all duration-200 glow-accent-hover active:scale-[0.98]"
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-all duration-200 glow-accent-hover active:scale-[0.98] min-h-[44px]"
         >
           <Plus size={16} />
           <span>Compose Action</span>
@@ -100,7 +100,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
               key={item.path}
               to={item.path}
               onClick={handleLinkClick}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 border-l-4 ${
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 border-l-4 min-h-[44px] ${
                 active 
                   ? 'bg-gradient-to-r from-indigo-600/30 to-purple-600/20 text-white border-accent shadow-[0_4px_12px_rgba(99,102,241,0.15)] font-semibold' 
                   : 'text-gray-400 hover:text-gray-100 hover:bg-white/5 border-transparent'

@@ -56,7 +56,7 @@ export const Layout: React.FC<LayoutProps> = ({
           {/* Mobile menu trigger */}
           <button
             onClick={() => setIsMobileMenuOpen(true)}
-            className="md:hidden p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+            className="md:hidden p-3 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
             aria-label="Open mobile menu"
           >
             <Menu size={20} />
@@ -79,7 +79,7 @@ export const Layout: React.FC<LayoutProps> = ({
             
             {/* Dark Mode toggle visual */}
             <button 
-              className="p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+              className="p-3 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
               aria-label="Toggle dark mode"
             >
               <Moon size={18} />
@@ -87,11 +87,11 @@ export const Layout: React.FC<LayoutProps> = ({
 
             {/* Notification Bell */}
             <button 
-              className="p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-colors relative"
+              className="p-3 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-colors relative min-h-[44px] min-w-[44px] flex items-center justify-center"
               aria-label="Notifications"
             >
               <Bell size={18} />
-              <span className="absolute top-2 right-2.5 h-1.5 w-1.5 rounded-full bg-indigo-500"></span>
+              <span className="absolute top-3 right-3 h-1.5 w-1.5 rounded-full bg-indigo-500"></span>
             </button>
 
             <div className="h-6 w-px bg-white/10 hidden sm:block"></div>
@@ -109,7 +109,7 @@ export const Layout: React.FC<LayoutProps> = ({
               <button 
                 onClick={logout}
                 title="Log Out"
-                className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 transition-all active:scale-95"
+                className="w-11 h-11 md:w-8 md:h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 transition-all active:scale-95 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0"
               >
                 {user?.email ? user.email.substring(0, 2).toUpperCase() : 'OS'}
               </button>
