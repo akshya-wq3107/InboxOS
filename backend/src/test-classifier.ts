@@ -4,7 +4,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 
 // Load environment variables (disable actual API keys to ensure LLM is not called)
-dotenv.config({ path: path.resolve(__dirname, '../../config/env/.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../infrastructure/config/env/.env') });
 
 async function runClassifierTests() {
   console.log('🧪 Running Heuristic Keyword Filter Tests...\n');

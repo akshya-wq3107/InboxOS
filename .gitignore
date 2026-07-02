@@ -76,5 +76,5 @@ coverage/
 .turbo/
 
 # Configuration exceptions
-!config/env/
-!config/env/.env.example
+!infrastructure/config/env/
+!infrastructure/config/env/.env.example
