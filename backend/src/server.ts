@@ -6,6 +6,7 @@ import { AuthService } from './services/auth.service';
 import { requireAuth, AuthenticatedRequest } from './middleware/auth.middleware';
 import { EventBus } from './services/event-bus.service';
 import { RedisService } from './services/redis.service';
+import { ragRouter } from './routes/rag.routes';
 
 const app = express();
 const prisma = new PrismaClient();
@@ -14,6 +15,7 @@ const PORT = process.env.PORT || 8000;
 // Middleware
 app.use(express.json());
 app.use(cookieParser());
+app.use(ragRouter);
 
 /**
  * POST /api/auth/register
