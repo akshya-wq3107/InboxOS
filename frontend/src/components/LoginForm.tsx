@@ -108,6 +108,19 @@ export const LoginForm: React.FC = () => {
     }
   };
 
+  const handleUseDemoAccount = async () => {
+    clearError();
+    setIsLoading(true);
+    try {
+      await login('demo@inboxos.app', 'password123');
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Demo login error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <AuthLayout>
       <div className="w-full space-y-6">
@@ -279,6 +292,20 @@ export const LoginForm: React.FC = () => {
                 <span>Continue</span>
                 <ArrowRight size={13} />
               </>
+            )}
+          </button>
+
+          {/* Demo Login Button */}
+          <button
+            type="button"
+            onClick={handleUseDemoAccount}
+            disabled={isLoading}
+            className="w-full flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 font-bold text-xs transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none mt-2.5 uppercase tracking-wider"
+          >
+            {isLoading ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <span>Use Demo Account</span>
             )}
           </button>
         </form>

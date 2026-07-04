@@ -17,7 +17,9 @@ export class CalendarCreatorService {
     emailId: string
   ): Promise<any> {
     try {
-      logger.info(`[CalendarCreator] Creating Google Calendar event for user: ${userId}`);
+      logger.info(
+        `[CalendarCreator] Creating Google Calendar event for user: ${userId}`
+      );
 
       // 1. Fetch Google Calendar integration credentials from database
       const integration = await prisma.integration.findUnique({
@@ -30,7 +32,9 @@ export class CalendarCreatorService {
       });
 
       if (!integration) {
-        logger.warn(`[CalendarCreator] Missing Google Calendar integration for user: ${userId}. Queueing/Retrying.`);
+        logger.warn(
+          `[CalendarCreator] Missing Google Calendar integration for user: ${userId}. Queueing/Retrying.`
+        );
         throw new Error('MISSING_GOOGLE_CALENDAR_CREDENTIALS');
       }
 
@@ -39,7 +43,10 @@ export class CalendarCreatorService {
       try {
         tokens = JSON.parse(decrypt(integration.encryptedTokens));
       } catch (decryptErr) {
-        logger.error(`[CalendarCreator] Failed to decrypt integration tokens for user: ${userId}`, decryptErr);
+        logger.error(
+          `[CalendarCreator] Failed to decrypt integration tokens for user: ${userId}`,
+          decryptErr
+        );
         throw new Error('INVALID_DECRYPTION_KEY_OR_TOKENS');
       }
 
@@ -47,13 +54,16 @@ export class CalendarCreatorService {
       const oauth2Client = new google.auth.OAuth2(
         process.env.GMAIL_CLIENT_ID,
         process.env.GMAIL_CLIENT_SECRET,
-        process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/api/integrations/gmail/callback'
+        process.env.GMAIL_REDIRECT_URI ||
+          'http://localhost:8000/api/integrations/gmail/callback'
       );
       oauth2Client.setCredentials(tokens);
 
       // Listen for token refresh events and save them back to database
       oauth2Client.on('tokens', async (newTokens) => {
-        logger.info(`[CalendarCreator] Google Calendar OAuth tokens refreshed for user: ${userId}`);
+        logger.info(
+          `[CalendarCreator] Google Calendar OAuth tokens refreshed for user: ${userId}`
+        );
         const updatedTokens = { ...tokens, ...newTokens };
         await prisma.integration.update({
           where: {
@@ -97,7 +107,9 @@ export class CalendarCreatorService {
       let response: any;
       if (existingEvent && existingEvent.googleEventId) {
         // Update existing event in Google Calendar
-        logger.info(`[CalendarCreator] Updating existing Google Calendar event: ${existingEvent.googleEventId}`);
+        logger.info(
+          `[CalendarCreator] Updating existing Google Calendar event: ${existingEvent.googleEventId}`
+        );
         response = await calendar.events.update({
           calendarId: 'primary',
           eventId: existingEvent.googleEventId,
@@ -105,7 +117,9 @@ export class CalendarCreatorService {
         });
       } else {
         // Insert new event in Google Calendar
-        logger.info('[CalendarCreator] Inserting new event into Google Calendar');
+        logger.info(
+          '[CalendarCreator] Inserting new event into Google Calendar'
+        );
         response = await calendar.events.insert({
           calendarId: 'primary',
           requestBody: eventResource,
@@ -142,11 +156,16 @@ export class CalendarCreatorService {
         },
       });
 
-      logger.info(`[CalendarCreator] Successfully synchronized CalendarEvent ${savedEvent.id} with Google Calendar ID ${googleEventId}`);
+      logger.info(
+        `[CalendarCreator] Successfully synchronized CalendarEvent ${savedEvent.id} with Google Calendar ID ${googleEventId}`
+      );
       return savedEvent;
     } catch (err: any) {
-      logger.error('[CalendarCreator] Event creation failed:', err.message || err);
-      
+      logger.error(
+        '[CalendarCreator] Event creation failed:',
+        err.message || err
+      );
+
       // Save/Update the event with status failed in the database
       try {
         await prisma.calendarEvent.upsert({
@@ -170,7 +189,10 @@ export class CalendarCreatorService {
           },
         });
       } catch (dbErr) {
-        logger.error('[CalendarCreator] Failed to save error status to database:', dbErr);
+        logger.error(
+          '[CalendarCreator] Failed to save error status to database:',
+          dbErr
+        );
       }
 
       throw err;

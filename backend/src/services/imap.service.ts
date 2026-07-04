@@ -170,8 +170,11 @@ export class IMAPService {
         threadId = thread.id;
       }
 
-      const links = await LinkAttachmentExtractorService.extractLinks(parsed.html || parsed.text || '');
-      const attachments = LinkAttachmentExtractorService.extractAttachments(parsed);
+      const links = await LinkAttachmentExtractorService.extractLinks(
+        parsed.html || parsed.text || ''
+      );
+      const attachments =
+        LinkAttachmentExtractorService.extractAttachments(parsed);
 
       const emailRecord = await prisma.email.create({
         data: {
@@ -248,13 +251,17 @@ export class ImapService {
         host: config.host,
         port: config.port,
         tls: config.tls,
-        tlsOptions: { rejectUnauthorized: process.env.NODE_ENV === 'production' },
-        connTimeout: 10000,  // 10 second timeout
+        tlsOptions: {
+          rejectUnauthorized: process.env.NODE_ENV === 'production',
+        },
+        connTimeout: 10000, // 10 second timeout
         authTimeout: 10000,
       });
 
       const cleanup = (success: boolean, error?: string) => {
-        try { imap.destroy(); } catch (_) {}
+        try {
+          imap.destroy();
+        } catch (_) {}
         resolve({ success, error });
       };
 
@@ -278,4 +285,3 @@ export class ImapService {
     });
   }
 }
-

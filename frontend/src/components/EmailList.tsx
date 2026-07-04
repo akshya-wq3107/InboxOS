@@ -612,7 +612,9 @@ export const EmailList: React.FC = () => {
             />
             <input
               type="text"
-              placeholder={isAiSearch ? "AI-powered search..." : "Search local inbox..."}
+              placeholder={
+                isAiSearch ? 'AI-powered search...' : 'Search local inbox...'
+              }
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);

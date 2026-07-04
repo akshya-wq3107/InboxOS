@@ -253,8 +253,6 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
             ))}
           </div>
         </div>
-
-
       </div>
 
       {/* ── Right Authentication Panel (40% Width on Desktop) ─────────────────── */}

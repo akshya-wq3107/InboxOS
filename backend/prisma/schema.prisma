@@ -8,25 +8,10 @@ generator client {
 }
 
 model User {
-  id           String        @id @default(uuid())
-  email        String        @unique
-  passwordHash String
-  createdAt    DateTime      @default(now())
-  emails       Email[]
-  settings     UserSettings?
-  feedbacks    UserFeedback[]
-}
-
-model UserSettings {
-  id                  String  @id @default(uuid())
-  theme               String  @default("dark")
-  signature           String?
-  autoReply           Boolean @default(false)
-  aiPreferenceProfile String?
-  id            String           @id @default(uuid())
-  email         String           @unique
+  id            String            @id @default(uuid())
+  email         String            @unique
   passwordHash  String
-  createdAt     DateTime         @default(now())
+  createdAt     DateTime          @default(now())
   emails        Email[]
   settings      UserSettings?
   emailAccounts EmailAccount[]
@@ -34,6 +19,11 @@ model UserSettings {
   rules         Rule[]
   reminders     Reminder[]
   notifications Notification[]
+  Integration   Integration[]
+  CalendarEvent CalendarEvent[]
+  Expense       Expense[]
+  Digest        Digest[]
+  UserFeedback  UserFeedback[]
 }
 
 model UserSettings {
@@ -43,9 +33,14 @@ model UserSettings {
   autoReply       Boolean @default(false)
   telegramChatId  String?
   telegramEnabled Boolean @default(false)
+  dndEnabled      Boolean @default(false)
+  dndStart        String? // e.g. "22:00"
+  dndEnd          String? // e.g. "08:00"
+  timezone        String  @default("UTC")
+  digestSchedule  String  @default("daily") // 'daily' | 'weekly' | 'disabled'
 
-  userId    String  @unique
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Thread {
@@ -64,21 +59,25 @@ model Email {
   subject     String
   body        String
   status      String   @default("UNREAD")
-  category    String?  // Added for email classification
+  category    String? // Added for email classification
   createdAt   DateTime @default(now())
   links       Json?
   attachments Json?
 
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   threadId    String
-  thread      Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread      Thread                       @relation(fields: [threadId], references: [id], onDelete: Cascade)
   actionItems ActionItem[]
-  embedding String?
-  feedbacks UserFeedback[]
-  reminders   Reminder[]
-  embedding   String?
+  embedding   Unsupported("vector(1536)")?
+
+  analysis       EmailAnalysis?
+  calendarEvents CalendarEvent[]
+  digestId       String?
+  digest         Digest?         @relation(fields: [digestId], references: [id])
+  expenses       Expense[]
+  reminders      Reminder[]
 
   @@index([userId])
   @@index([threadId])
@@ -86,21 +85,21 @@ model Email {
 }
 
 model EmailAnalysis {
-  id              String   @id @default(uuid())
-  emailId         String   @unique
-  email           Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
-  deadlines       String[] // Added deadlines string[]
-  category        String?
-  priorityScore   Float?   @default(0.0)
-  urgencyScore    Float?   @default(0.0)
-  actionabilityScore Float? @default(0.0)
-  confidenceScore Float?   @default(0.0)
-  summary         String?
-  reasoning       String?
-  suggestedReply  String?
-  extractedData   Json?
-  aiProvider      String?  @default("mock")
-  analyzedAt      DateTime @default(now())
+  id                 String   @id @default(uuid())
+  emailId            String   @unique
+  email              Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  deadlines          String[] // Added deadlines string[]
+  category           String?
+  priorityScore      Float?   @default(0.0)
+  urgencyScore       Float?   @default(0.0)
+  actionabilityScore Float?   @default(0.0)
+  confidenceScore    Float?   @default(0.0)
+  summary            String?
+  reasoning          String?
+  suggestedReply     String?
+  extractedData      Json?
+  aiProvider         String?  @default("mock")
+  analyzedAt         DateTime @default(now())
 }
 
 model ActionItem {
@@ -111,7 +110,7 @@ model ActionItem {
   deadline        DateTime?
   createdAt       DateTime  @default(now())
 
-  email           Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  email Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
 }
 
 model UserFeedback {
@@ -129,46 +128,54 @@ model UserFeedback {
 model Reminder {
   id          String    @id @default(uuid())
   userId      String
-  emailId     String
-  deadline    DateTime  // stored in UTC
-  offsets     Int[]     // minutes before deadline: [1440, 60, 0]
-  status      String    @default("PENDING") // PENDING | FIRED | SNOOZED | CANCELLED
+  emailId     String?
+  deadline    DateTime // stored in UTC
+  offsets     Int[] // minutes before deadline: [1440, 60, 0]
+  status      String    @default("PENDING") // PENDING | FIRED | SNOOZED | CANCELLED | active | triggered
   snoozeUntil DateTime?
-  jobIds      String[]  // BullMQ job IDs — used for cancellation
+  jobIds      String[] // BullMQ job IDs — used for cancellation
   createdAt   DateTime  @default(now())
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  email         Email          @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  email         Email?         @relation(fields: [emailId], references: [id], onDelete: Cascade)
   notifications Notification[]
 
   // Deduplication: same email + same deadline = one reminder set
   @@unique([emailId, deadline])
-  @@index([userId, status])
+  @@index([userId])
+  @@index([emailId])
   @@index([deadline])
+  @@map("reminders")
 }
 
 model Notification {
   id         String   @id @default(uuid())
   userId     String
-  reminderId String
-  channel    String   // 'telegram' | 'slack' | 'discord'
+  reminderId String?
+  channel    String? // 'telegram' | 'slack' | 'discord'
+  type       String? // 'email_received' | 'action_item' | 'digest' | 'system'
+  title      String?
   message    String
   sentAt     DateTime @default(now())
+  createdAt  DateTime @default(now())
   isRead     Boolean  @default(false)
+  metadata   Json?
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reminder Reminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminder Reminder? @relation(fields: [reminderId], references: [id], onDelete: Cascade)
 
-  @@index([userId, isRead])
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
 }
 
 // ─── Email Accounts ───────────────────────────────────────────────────────────
 
 model EmailAccount {
   id              String    @id @default(uuid())
-  provider        String    // 'gmail', 'outlook', 'imap'
+  provider        String // 'gmail', 'outlook', 'imap'
   emailAddress    String
-  encryptedTokens String    // Encrypted refresh & access tokens
+  encryptedTokens String // Encrypted refresh & access tokens
   syncState       String    @default("connected")
   isActive        Boolean   @default(true)
   lastSyncAt      DateTime?
@@ -177,9 +184,9 @@ model EmailAccount {
   smtpPort        Int?
   createdAt       DateTime  @default(now())
 
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([userId, provider, emailAddress])
   @@map("email_accounts")
 }
@@ -187,73 +194,73 @@ model EmailAccount {
 model WebhookEndpoint {
   id        String   @id @default(uuid())
   targetUrl String
-  events    String   // JSON array stored as a string: '["email.received","action.created"]'
-  secret    String   // HMAC signing secret for payload verification
+  events    String // JSON array stored as a string: '["email.received","action.created"]'
+  secret    String // HMAC signing secret for payload verification
   createdAt DateTime @default(now())
 
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("webhook_endpoints")
 }
 
 model Rule {
-  id           String          @id @default(uuid())
-  userId       String
-  name         String
-  description  String?
-  isActive     Boolean         @default(true)
-  priority     Int             @default(0)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  priority    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conditions   RuleCondition[]
-  actions      RuleAction[]
-  logs         RuleExecutionLog[]
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conditions RuleCondition[]
+  actions    RuleAction[]
+  logs       RuleExecutionLog[]
 }
 
 model RuleCondition {
   id        String   @id @default(uuid())
   ruleId    String
-  field     String   // 'from', 'to', 'subject', 'body', 'category', 'priority', 'hasAttachments', 'senderDomain'
-  operator  String   // 'equals', 'contains', 'startsWith', 'endsWith', 'regex', 'gt', 'lt', 'in'
+  field     String // 'from', 'to', 'subject', 'body', 'category', 'priority', 'hasAttachments', 'senderDomain'
+  operator  String // 'equals', 'contains', 'startsWith', 'endsWith', 'regex', 'gt', 'lt', 'in'
   value     String
   createdAt DateTime @default(now())
 
-  rule      Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  rule Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 }
 
 model RuleAction {
   id        String   @id @default(uuid())
   ruleId    String
-  type      String   // 'moveToFolder', 'applyLabel', 'markAsRead', 'markAsUrgent', 'forwardTo', 'webhook', 'sendTelegram', 'sendWhatsApp'
+  type      String // 'moveToFolder', 'applyLabel', 'markAsRead', 'markAsUrgent', 'forwardTo', 'webhook', 'sendTelegram', 'sendWhatsApp'
   config    Json
   createdAt DateTime @default(now())
 
-  rule      Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  rule Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 }
 
 model RuleExecutionLog {
   id           String   @id @default(uuid())
   ruleId       String
   emailId      String
-  status       String   // 'success', 'failed'
+  status       String // 'success', 'failed'
   executedAt   DateTime @default(now())
   errorMessage String?
 
-  rule         Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  rule Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 }
 
 model Integration {
   id              String   @id @default(uuid())
   userId          String
-  provider        String   // 'google_calendar' or similar
-  encryptedTokens String   // Encrypted refresh & access tokens
+  provider        String // 'google_calendar' or similar
+  encryptedTokens String // Encrypted refresh & access tokens
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, provider])
 }
@@ -269,94 +276,67 @@ model CalendarEvent {
   attendees     String[]
   meetingLink   String?
   googleEventId String?  @unique
-  status        String   // 'pending' | 'created' | 'failed'
+  status        String // 'pending' | 'created' | 'failed'
   createdAt     DateTime @default(now())
 
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  email         Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([emailId])
 }
 
 model Expense {
-  id          String   @id @default(uuid())
-  userId      String
-  emailId     String?
-  merchant    String?
-  amount      Float?
-  currency    String?  @default("USD")
-  category    String?
-  date        DateTime?
-  rawData     Json?
-  createdAt   DateTime @default(now())
+  id            String    @id @default(uuid())
+  userId        String
+  emailId       String?
+  amount        Float?
+  amountUsd     Float? // Store USD equivalent
+  currency      String?   @default("USD")
+  merchantName  String?
+  category      String?
+  date          DateTime?
+  paymentMethod String?
+  items         Json? // itemsJSONB
+  isRecurring   Boolean   @default(false)
+  createdAt     DateTime  @default(now())
 
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email Email? @relation(fields: [emailId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([emailId])
   @@map("expenses")
 }
 
 model Digest {
-  id          String   @id @default(uuid())
-  userId      String
-  type        String   @default("daily") // 'daily' | 'weekly'
-  content     String
-  emailCount  Int      @default(0)
-  sentAt      DateTime?
-  createdAt   DateTime @default(now())
+  id        String    @id @default(uuid())
+  userId    String
+  type      String    @default("daily") // 'daily' | 'weekly'
+  content   Json // JSONB content
+  emailIds  String[]
+  sentAt    DateTime?
+  status    String    @default("pending") // 'pending' | 'sent' | 'failed'
+  createdAt DateTime  @default(now())
 
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails Email[]
 
   @@index([userId])
   @@map("digests")
 }
 
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  type      String   // 'email_received' | 'action_item' | 'digest' | 'system'
-  title     String
-  message   String
-  isRead    Boolean  @default(false)
-  metadata  Json?
-  createdAt DateTime @default(now())
-
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([isRead])
-  @@map("notifications")
-}
-
-model Reminder {
-  id          String   @id @default(uuid())
-  userId      String
-  emailId     String?
-  title       String
-  dueAt       DateTime
-  isSent      Boolean  @default(false)
-  createdAt   DateTime @default(now())
-
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([dueAt])
-  @@map("reminders")
-}
-
 model UserFeedback {
-  id            String   @id @default(uuid())
-  userId        String
-  emailId       String?
-  feedbackType  String   // 'thumbs_up' | 'thumbs_down'
-  feature       String?  // 'classify' | 'summarize' | 'reply' | 'extract_actions'
-  comment       String?
-  createdAt     DateTime @default(now())
+  id           String   @id @default(uuid())
+  userId       String
+  emailId      String?
+  feedbackType String // 'thumbs_up' | 'thumbs_down'
+  feature      String? // 'classify' | 'summarize' | 'reply' | 'extract_actions'
+  comment      String?
+  createdAt    DateTime @default(now())
 
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("user_feedback")
 }
-

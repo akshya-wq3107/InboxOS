@@ -37,12 +37,11 @@ export interface ActionItemResult {
   deadline: string | null;
 }
 
-
 export class AIService {
   private static openaiInstance: OpenAI | null = null;
   private static geminiInstance: GoogleGenAI | null = null;
 
-  private static getOpenAI(): OpenAI {
+  public static getOpenAI(): OpenAI {
     if (!this.openaiInstance) {
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey || apiKey === 'sk-...') {
@@ -95,7 +94,10 @@ export class AIService {
       try {
         result = await OllamaProvider.classify(subject, body);
       } catch (error) {
-        console.warn(`[AIService] Ollama classification failed or unreachable. Falling back to OpenAI. Error:`, error);
+        console.warn(
+          `[AIService] Ollama classification failed or unreachable. Falling back to OpenAI. Error:`,
+          error
+        );
         result = await this.classifyWithOpenAI(subject, body);
       }
     } else {
@@ -344,7 +346,6 @@ Provide a confidence score between 0.0 and 1.0. Also, extract all deadlines ment
     throw new Error('Unknown error during Gemini email classification.');
   }
 
-
   /**
    * Generates a 2-3 sentence summary of an email thread and saves it to the Thread model.
    * Fetches all emails belonging to the thread ordered by date, truncates content to 8000 tokens
@@ -381,7 +382,10 @@ Provide a confidence score between 0.0 and 1.0. Also, extract all deadlines ment
       try {
         summary = await OllamaProvider.generateSummary([truncatedText]);
       } catch (error) {
-        console.warn(`[AIService] Ollama thread summarization failed or unreachable. Falling back to OpenAI. Error:`, error);
+        console.warn(
+          `[AIService] Ollama thread summarization failed or unreachable. Falling back to OpenAI. Error:`,
+          error
+        );
         summary = await this.summarizeWithOpenAI(truncatedText);
       }
     } else {
@@ -528,7 +532,10 @@ Provide a confidence score between 0.0 and 1.0. Also, extract all deadlines ment
   /**
    * Extracts explicit, concrete tasks and their deadlines from an email subject and body.
    */
-  public static async extractActionItems(subject: string, body: string): Promise<ActionItemResult[]> {
+  public static async extractActionItems(
+    subject: string,
+    body: string
+  ): Promise<ActionItemResult[]> {
     const provider = process.env.AI_PROVIDER || 'openai';
     let items: ActionItemResult[] = [];
 
@@ -538,7 +545,10 @@ Provide a confidence score between 0.0 and 1.0. Also, extract all deadlines ment
       try {
         items = await OllamaProvider.extractActionItems(subject, body);
       } catch (error) {
-        console.warn(`[AIService] Ollama action items extraction failed or unreachable. Falling back to OpenAI. Error:`, error);
+        console.warn(
+          `[AIService] Ollama action items extraction failed or unreachable. Falling back to OpenAI. Error:`,
+          error
+        );
         items = await this.extractActionItemsWithOpenAI(subject, body);
       }
     } else {
@@ -567,9 +577,12 @@ Provide a confidence score between 0.0 and 1.0. Also, extract all deadlines ment
   /**
    * Backward-compatible wrapper that extracts task description strings.
    */
-  public static async extractActions(subject: string, body: string): Promise<string[]> {
+  public static async extractActions(
+    subject: string,
+    body: string
+  ): Promise<string[]> {
     const items = await this.extractActionItems(subject, body);
-    return items.map(item => item.taskDescription);
+    return items.map((item) => item.taskDescription);
   }
 
   private static parseDateWithChrono(text: string): string | null {
@@ -606,7 +619,10 @@ Provide a confidence score between 0.0 and 1.0. Also, extract all deadlines ment
     }
   }
 
-  private static async extractActionItemsWithOpenAI(subject: string, body: string): Promise<ActionItemResult[]> {
+  private static async extractActionItemsWithOpenAI(
+    subject: string,
+    body: string
+  ): Promise<ActionItemResult[]> {
     const openai = this.getOpenAI();
 
     const systemPrompt = `You are an expert AI email task extraction assistant. Your job is to analyze the email subject line and body text, and extract all explicit, concrete tasks (e.g., 'Send the report by Friday') mentioned.
@@ -667,7 +683,9 @@ If there are no explicit, concrete tasks, return an empty array.`;
           );
         }
 
-        const result = JSON.parse(rawContent) as { actionItems: ActionItemResult[] };
+        const result = JSON.parse(rawContent) as {
+          actionItems: ActionItemResult[];
+        };
         return result.actionItems || [];
       } catch (error: any) {
         attempt++;
@@ -699,7 +717,10 @@ If there are no explicit, concrete tasks, return an empty array.`;
     throw new Error('Unknown error during OpenAI action extraction.');
   }
 
-  private static async extractActionItemsWithGemini(subject: string, body: string): Promise<ActionItemResult[]> {
+  private static async extractActionItemsWithGemini(
+    subject: string,
+    body: string
+  ): Promise<ActionItemResult[]> {
     const ai = this.getGemini();
 
     const systemInstruction = `You are an expert AI email task extraction assistant. Your job is to analyze the email subject line and body text, and extract all explicit, concrete tasks (e.g., 'Send the report by Friday') mentioned.
@@ -752,7 +773,9 @@ If there are no explicit, concrete tasks, return an empty array.`;
           );
         }
 
-        const result = JSON.parse(rawContent) as { actionItems: ActionItemResult[] };
+        const result = JSON.parse(rawContent) as {
+          actionItems: ActionItemResult[];
+        };
         return result.actionItems || [];
       } catch (error: any) {
         attempt++;
@@ -815,7 +838,9 @@ If there are no explicit, concrete tasks, return an empty array.`;
     const subject = email.subject || '';
     const body = email.body || '';
     if (!body.trim()) {
-      console.warn(`[AIService] Skipping embedding for email ${emailId} because body is empty.`);
+      console.warn(
+        `[AIService] Skipping embedding for email ${emailId} because body is empty.`
+      );
       return [];
     }
 
@@ -963,7 +988,11 @@ If there are no explicit, concrete tasks, return an empty array.`;
    * If running under PostgreSQL, uses raw SQL native pgvector cosine similarity.
    * If running under SQLite, retrieves all embedded emails and calculates similarity in-memory.
    */
-  public static async searchSimilarEmails(query: string, limit: number = 5, userId?: string): Promise<any[]> {
+  public static async searchSimilarEmails(
+    query: string,
+    limit: number = 5,
+    userId?: string
+  ): Promise<any[]> {
     const provider = process.env.AI_PROVIDER || 'openai';
     let queryEmbedding: number[] = [];
 
@@ -1059,6 +1088,147 @@ If there are no explicit, concrete tasks, return an empty array.`;
       return 0;
     }
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  /**
+   * Generate a text reply or completion from AI given a prompt.
+   * Used by email reply generation, expense extraction, and digest generation.
+   */
+  public static async generateReply(prompt: string): Promise<string> {
+    const provider = process.env.AI_PROVIDER || 'openai';
+
+    try {
+      if (provider === 'gemini') {
+        const gemini = this.getGemini();
+        const response = await gemini.models.generateContent({
+          model: 'gemini-1.5-flash',
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        });
+        return response.text || '';
+      } else {
+        const openai = this.getOpenAI();
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 1500,
+          temperature: 0.7,
+        });
+        return response.choices[0]?.message?.content || '';
+      }
+    } catch (err: any) {
+      throw new Error(`AI generateReply failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Categorizes a link's purpose using LLM (OpenAI, Gemini, or Ollama)
+   */
+  public static async categorizeLink(
+    href: string,
+    text: string
+  ): Promise<string> {
+    const provider = process.env.AI_PROVIDER || 'openai';
+    const systemPrompt = `You are a link classification assistant. Categorize the given link (based on URL and anchor text) into one of the following categories:
+- unsubscribe
+- confirm
+- download
+- meeting
+- payment
+- other
+
+Provide the result as a JSON object with a single field 'category'.`;
+    const userPrompt = `URL: ${href}\nAnchor Text: ${text}`;
+
+    try {
+      if (provider === 'gemini') {
+        const gemini = this.getGemini();
+        const response = await gemini.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: userPrompt,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                category: {
+                  type: 'STRING',
+                  enum: [
+                    'unsubscribe',
+                    'confirm',
+                    'download',
+                    'meeting',
+                    'payment',
+                    'other',
+                  ],
+                },
+              },
+              required: ['category'],
+            },
+          },
+        });
+        const parsed = JSON.parse(response.text || '{}');
+        return parsed.category || 'other';
+      } else if (provider === 'mock') {
+        const lowerHref = href.toLowerCase();
+        if (
+          lowerHref.includes('zoom.us') ||
+          lowerHref.includes('meet.google.com')
+        ) {
+          return 'meeting';
+        }
+        return 'other';
+      } else {
+        return await this.categorizeLinkWithOpenAI(systemPrompt, userPrompt);
+      }
+    } catch (err: any) {
+      console.warn(
+        `[AIService] Link categorization fallback to 'other' due to error:`,
+        err.message
+      );
+      return 'other';
+    }
+  }
+
+  private static async categorizeLinkWithOpenAI(
+    systemPrompt: string,
+    userPrompt: string
+  ): Promise<string> {
+    const openai = this.getOpenAI();
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'link_categorization',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              category: {
+                type: 'string',
+                enum: [
+                  'unsubscribe',
+                  'confirm',
+                  'download',
+                  'meeting',
+                  'payment',
+                  'other',
+                ],
+              },
+            },
+            required: ['category'],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+    const parsed = JSON.parse(response.choices[0]?.message?.content || '{}');
+    return parsed.category || 'other';
   }
 
   /**
@@ -1222,4 +1392,3 @@ Do NOT infer or fabricate deadlines. Only return dates explicitly stated.`;
     return [];
   }
 }
-

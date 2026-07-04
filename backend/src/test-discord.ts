@@ -22,6 +22,7 @@ async function runTest() {
     threadId: 'thread-id-xyz',
     links: [],
     attachments: [],
+    digestId: null,
   };
 
   console.log('Starting Discord notification test...');

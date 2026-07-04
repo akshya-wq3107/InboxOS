@@ -45,16 +45,22 @@ export class OllamaProvider {
         errorMsg.toLowerCase().includes('pull');
 
       if (isModelMissing) {
-        console.warn(`[Ollama] Model '${model}' not found locally. Auto-pulling model from Ollama library...`);
+        console.warn(
+          `[Ollama] Model '${model}' not found locally. Auto-pulling model from Ollama library...`
+        );
         // Trigger pull request (stream: false to await completion)
         await axios.post(`${baseUrl}/api/pull`, {
           name: model,
           stream: false,
         });
-        console.info(`[Ollama] Model '${model}' pulled successfully! Retrying original request...`);
-        
+        console.info(
+          `[Ollama] Model '${model}' pulled successfully! Retrying original request...`
+        );
+
         const retryResponse = await makeRequest();
-        return await this.accumulateStream(retryResponse.data as IncomingMessage);
+        return await this.accumulateStream(
+          retryResponse.data as IncomingMessage
+        );
       }
       throw error;
     }
@@ -63,7 +69,9 @@ export class OllamaProvider {
   /**
    * Accumulate the Ollama streaming JSON response into a single string.
    */
-  private static async accumulateStream(stream: IncomingMessage): Promise<string> {
+  private static async accumulateStream(
+    stream: IncomingMessage
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       let accumulatedText = '';
       stream.on('data', (chunk: Buffer) => {
@@ -102,7 +110,10 @@ export class OllamaProvider {
       try {
         return JSON.parse(jsonMatch[0]);
       } catch (e) {
-        console.error(`[Ollama] Found JSON object block but failed to parse:`, e);
+        console.error(
+          `[Ollama] Found JSON object block but failed to parse:`,
+          e
+        );
       }
     }
 
@@ -112,17 +123,25 @@ export class OllamaProvider {
       try {
         return JSON.parse(arrayMatch[0]);
       } catch (e) {
-        console.error(`[Ollama] Found JSON array block but failed to parse:`, e);
+        console.error(
+          `[Ollama] Found JSON array block but failed to parse:`,
+          e
+        );
       }
     }
 
-    throw new Error(`[Ollama] Failed to extract any valid JSON block from output: "${text}"`);
+    throw new Error(
+      `[Ollama] Failed to extract any valid JSON block from output: "${text}"`
+    );
   }
 
   /**
    * Classify email subject and body into category, confidence score, and deadlines.
    */
-  public static async classify(subject: string, body: string): Promise<ClassificationResult> {
+  public static async classify(
+    subject: string,
+    body: string
+  ): Promise<ClassificationResult> {
     const prompt = `You are an expert AI email classification assistant. Your task is to analyze the email's subject line and body text, and classify it into exactly one of the following categories:
 - urgent: Requires immediate attention, system alerts, outages, or critical action.
 - newsletter: Weekly/daily digests, marketing updates, announcements, or blogs.
@@ -149,7 +168,8 @@ Response JSON:`;
 
     return {
       category: parsed.category || 'personal',
-      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+      confidence:
+        typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
       deadlines: Array.isArray(parsed.deadlines) ? parsed.deadlines : [],
     };
   }
@@ -157,7 +177,10 @@ Response JSON:`;
   /**
    * Extract action items with deadlines from subject and body.
    */
-  public static async extractActionItems(subject: string, body: string): Promise<ActionItemResult[]> {
+  public static async extractActionItems(
+    subject: string,
+    body: string
+  ): Promise<ActionItemResult[]> {
     const prompt = `You are an expert AI email task extraction assistant. Your job is to analyze the email subject line and body text, and extract all explicit, concrete tasks (e.g., 'Send the report by Friday') mentioned.
 For each task, also extract any mentioned deadline as an ISO 8601 string (e.g., '2026-07-15T23:59:00Z'). If no deadline is mentioned, return an empty string for the deadline.
 Do not infer, assume, or fabricate tasks or deadlines that are not explicitly and concretely requested.

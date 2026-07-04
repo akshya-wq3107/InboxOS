@@ -13,11 +13,16 @@ const getRedisConnectionOptions = (): ConnectionOptions => {
       port: parsed.port ? parseInt(parsed.port, 10) : 6379,
       username: parsed.username || undefined,
       password: parsed.password || undefined,
-      db: parsed.pathname ? parseInt(parsed.pathname.substring(1) || '0', 10) : 0,
+      db: parsed.pathname
+        ? parseInt(parsed.pathname.substring(1) || '0', 10)
+        : 0,
       maxRetriesPerRequest: null,
     };
   } catch (error) {
-    console.error('Failed to parse REDIS_URL, falling back to default localhost options:', error);
+    console.error(
+      'Failed to parse REDIS_URL, falling back to default localhost options:',
+      error
+    );
     return {
       host: 'localhost',
       port: 6379,
@@ -51,16 +56,23 @@ export const indexEmailsWorker = new Worker(
         );
       }
     } catch (dbErr) {
-      console.error('[BullMQ] Failed to fetch unindexed emails from database:', dbErr);
+      console.error(
+        '[BullMQ] Failed to fetch unindexed emails from database:',
+        dbErr
+      );
       return { indexedCount: 0 };
     }
 
-    console.log(`[BullMQ] Found ${unindexedEmails.length} unindexed emails to process.`);
+    console.log(
+      `[BullMQ] Found ${unindexedEmails.length} unindexed emails to process.`
+    );
 
     let indexedCount = 0;
     for (const email of unindexedEmails) {
       if (!email.body || !email.body.trim()) {
-        console.log(`[BullMQ] Skipping email ${email.id} because body is empty.`);
+        console.log(
+          `[BullMQ] Skipping email ${email.id} because body is empty.`
+        );
         continue;
       }
 
@@ -68,11 +80,16 @@ export const indexEmailsWorker = new Worker(
         await AIService.embedEmail(email.id);
         indexedCount++;
       } catch (error) {
-        console.error(`[BullMQ] Failed to generate embedding for email ${email.id}:`, error);
+        console.error(
+          `[BullMQ] Failed to generate embedding for email ${email.id}:`,
+          error
+        );
       }
     }
 
-    console.log(`[BullMQ] Finished job ${job.id}. Successfully indexed ${indexedCount} emails.`);
+    console.log(
+      `[BullMQ] Finished job ${job.id}. Successfully indexed ${indexedCount} emails.`
+    );
     return { indexedCount };
   },
   { connection }

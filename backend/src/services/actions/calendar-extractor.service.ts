@@ -16,10 +16,14 @@ export class CalendarExtractorService {
    * Supports Zoom, Google Meet, Microsoft Teams, and Webex.
    */
   public static detectMeetingLink(text: string): string | undefined {
-    const zoomRegex = /https?:\/\/[a-zA-Z0-9.-]*zoom\.us\/j\/[a-zA-Z0-9?=&-_]+/i;
-    const meetRegex = /https?:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i;
-    const teamsRegex = /https?:\/\/teams\.microsoft\.com\/l\/meetup-join\/[a-zA-Z0-9%?=&-./_]+/i;
-    const webexRegex = /https?:\/\/[a-zA-Z0-9.-]*webex\.com\/[a-zA-Z0-9?=&-_/]+/i;
+    const zoomRegex =
+      /https?:\/\/[a-zA-Z0-9.-]*zoom\.us\/j\/[a-zA-Z0-9?=&-_]+/i;
+    const meetRegex =
+      /https?:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i;
+    const teamsRegex =
+      /https?:\/\/teams\.microsoft\.com\/l\/meetup-join\/[a-zA-Z0-9%?=&-./_]+/i;
+    const webexRegex =
+      /https?:\/\/[a-zA-Z0-9.-]*webex\.com\/[a-zA-Z0-9?=&-_/]+/i;
 
     const zoomMatch = text.match(zoomRegex);
     if (zoomMatch) return zoomMatch[0];
@@ -40,14 +44,20 @@ export class CalendarExtractorService {
    * Extracts meeting details from an email or email analysis record.
    * Uses chrono-node to parse date/time relative to email's received date.
    */
-  public static extractEventDetails(emailAnalysis: any): CalendarEventData | null {
+  public static extractEventDetails(
+    emailAnalysis: any
+  ): CalendarEventData | null {
     try {
-      logger.info('[CalendarExtractor] Extracting event details from email/analysis');
+      logger.info(
+        '[CalendarExtractor] Extracting event details from email/analysis'
+      );
 
       // Resolve nested email object if passed EmailAnalysis, otherwise fallback to the object itself
       const email = emailAnalysis?.email || emailAnalysis;
       if (!email || (!email.body && !email.body_text) || !email.subject) {
-        logger.warn('[CalendarExtractor] Missing subject or body in email data');
+        logger.warn(
+          '[CalendarExtractor] Missing subject or body in email data'
+        );
         return null;
       }
 
@@ -58,8 +68,8 @@ export class CalendarExtractorService {
       const refDate = email.createdAt
         ? new Date(email.createdAt)
         : email.received_at
-        ? new Date(email.received_at)
-        : new Date();
+          ? new Date(email.received_at)
+          : new Date();
 
       // 1. Parse date and time using chrono-node
       // Try body first, then fallback to subject
@@ -69,17 +79,19 @@ export class CalendarExtractorService {
       }
 
       if (!parsedResults || parsedResults.length === 0) {
-        logger.info('[CalendarExtractor] No dates/times detected in email content');
+        logger.info(
+          '[CalendarExtractor] No dates/times detected in email content'
+        );
         return null;
       }
 
       // Take the first detected date/time result
       const result = parsedResults[0];
       const startTime = result.start.date();
-      
+
       // If end date/time is not provided, default to 1 hour after start
-      const endTime = result.end 
-        ? result.end.date() 
+      const endTime = result.end
+        ? result.end.date()
         : new Date(startTime.getTime() + 60 * 60 * 1000);
 
       // 2. Detect meeting links

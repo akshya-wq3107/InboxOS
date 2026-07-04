@@ -1,13 +1,13 @@
 import { logger } from '../utils/logger';
 
 export interface WhatsAppMessage {
-  to: string;   // E.164 format: +1234567890
+  to: string; // E.164 format: +1234567890
   body: string;
 }
 
 /**
  * WhatsAppAdapter — Sends WhatsApp messages via Twilio WhatsApp API.
- * 
+ *
  * Prerequisites:
  * - TWILIO_ACCOUNT_SID set in .env
  * - TWILIO_AUTH_TOKEN set in .env
@@ -25,10 +25,16 @@ export class WhatsAppAdapter {
   /**
    * Send a WhatsApp message via Twilio.
    */
-  public static async sendMessage(message: WhatsAppMessage): Promise<{ sid: string }> {
+  public static async sendMessage(
+    message: WhatsAppMessage
+  ): Promise<{ sid: string }> {
     if (!this.isConfigured) {
-      logger.warn('[WhatsApp] Twilio credentials not configured. Skipping message send.');
-      throw new Error('WhatsApp (Twilio) not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM.');
+      logger.warn(
+        '[WhatsApp] Twilio credentials not configured. Skipping message send.'
+      );
+      throw new Error(
+        'WhatsApp (Twilio) not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM.'
+      );
     }
 
     const accountSid = process.env.TWILIO_ACCOUNT_SID!;
@@ -64,7 +70,11 @@ export class WhatsAppAdapter {
   /**
    * Send an email alert notification via WhatsApp.
    */
-  public static async sendEmailAlert(to: string, subject: string, sender: string): Promise<void> {
+  public static async sendEmailAlert(
+    to: string,
+    subject: string,
+    sender: string
+  ): Promise<void> {
     await this.sendMessage({
       to,
       body: `📧 New email from *${sender}*\nSubject: ${subject}\n\n_InboxOS Alert_`,

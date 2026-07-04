@@ -301,18 +301,31 @@ export class RulesEngineService {
         break;
 
       case 'createcalendarevent':
-        logger.info(`[RulesEngine] Creating calendar event for email: ${email.id}`);
-        const calendarExtractor = await import('./actions/calendar-extractor.service');
-        const calendarCreator = await import('./actions/calendar-creator.service');
+        logger.info(
+          `[RulesEngine] Creating calendar event for email: ${email.id}`
+        );
+        const calendarExtractor =
+          await import('./actions/calendar-extractor.service');
+        const calendarCreator =
+          await import('./actions/calendar-creator.service');
         const calendarEventsJob = await import('../jobs/calendar-events.job');
 
-        const calEventData = calendarExtractor.CalendarExtractorService.extractEventDetails(email.analysis || email);
+        const calEventData =
+          calendarExtractor.CalendarExtractorService.extractEventDetails(
+            email.analysis || email
+          );
         if (calEventData) {
           try {
-            await calendarCreator.CalendarCreatorService.createGoogleCalendarEvent(calEventData, userId, email.id);
+            await calendarCreator.CalendarCreatorService.createGoogleCalendarEvent(
+              calEventData,
+              userId,
+              email.id
+            );
           } catch (err: any) {
             if (err.message === 'MISSING_GOOGLE_CALENDAR_CREDENTIALS') {
-              logger.info(`[RulesEngine] Missing credentials. Queueing calendar event creation for email: ${email.id}`);
+              logger.info(
+                `[RulesEngine] Missing credentials. Queueing calendar event creation for email: ${email.id}`
+              );
               await prisma.calendarEvent.upsert({
                 where: {
                   googleEventId: 'failed_' + email.id,
@@ -334,23 +347,29 @@ export class RulesEngineService {
                 },
               });
 
-              await calendarEventsJob.calendarEventsQueue.add('createEvent', {
-                userId,
-                emailId: email.id,
-                eventData: calEventData,
-              }, {
-                attempts: 5,
-                backoff: {
-                  type: 'exponential',
-                  delay: 5000,
+              await calendarEventsJob.calendarEventsQueue.add(
+                'createEvent',
+                {
+                  userId,
+                  emailId: email.id,
+                  eventData: calEventData,
                 },
-              });
+                {
+                  attempts: 5,
+                  backoff: {
+                    type: 'exponential',
+                    delay: 5000,
+                  },
+                }
+              );
             } else {
               throw err;
             }
           }
         } else {
-          logger.warn(`[RulesEngine] No event details extracted from email ${email.id}`);
+          logger.warn(
+            `[RulesEngine] No event details extracted from email ${email.id}`
+          );
         }
         break;
 

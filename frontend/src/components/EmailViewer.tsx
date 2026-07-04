@@ -13,6 +13,8 @@ import {
   Flame,
   CheckCircle2,
   Trash2,
+  Receipt,
+  TrendingDown,
 } from 'lucide-react';
 import { type EmailData } from './EmailRow';
 import { useCompose } from '../context/ComposeContext';
@@ -208,9 +210,12 @@ export const EmailViewer: React.FC<EmailViewerProps> = ({
   const { data: calendarStatus } = useQuery<{ connected: boolean }>({
     queryKey: ['calendar-status'],
     queryFn: async () => {
-      const response = await fetch(`${API_BASE}/api/integrations/google_calendar/status`, {
-        credentials: 'include',
-      });
+      const response = await fetch(
+        `${API_BASE}/api/integrations/google_calendar/status`,
+        {
+          credentials: 'include',
+        }
+      );
       if (!response.ok) return { connected: false };
       return response.json();
     },
@@ -219,16 +224,19 @@ export const EmailViewer: React.FC<EmailViewerProps> = ({
   const { data: calendarEvents, refetch: refetchEvents } = useQuery<any[]>({
     queryKey: ['email-calendar-events', emailId],
     queryFn: async () => {
-      const response = await fetch(`${API_BASE}/api/actions/calendar/events/${emailId}`, {
-        credentials: 'include',
-      });
+      const response = await fetch(
+        `${API_BASE}/api/actions/calendar/events/${emailId}`,
+        {
+          credentials: 'include',
+        }
+      );
       if (!response.ok) return [];
       return response.json();
     },
   });
 
   const [syncingCalendar, setSyncingCalendar] = useState(false);
-  
+
   const triggerCalendarSync = async () => {
     setSyncingCalendar(true);
     try {
@@ -254,9 +262,12 @@ export const EmailViewer: React.FC<EmailViewerProps> = ({
 
   const connectCalendar = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/integrations/google_calendar/auth`, {
-        credentials: 'include',
-      });
+      const response = await fetch(
+        `${API_BASE}/api/integrations/google_calendar/auth`,
+        {
+          credentials: 'include',
+        }
+      );
       if (response.ok) {
         const { url } = await response.json();
         window.location.href = url;
@@ -266,6 +277,47 @@ export const EmailViewer: React.FC<EmailViewerProps> = ({
     } catch (e) {
       console.error(e);
       alert('Error connecting to calendar authentication endpoint');
+    }
+  };
+
+  // Load expenses for this email
+  const { data: expenses, refetch: refetchExpenses } = useQuery<any[]>({
+    queryKey: ['email-expenses', emailId],
+    queryFn: async () => {
+      const response = await fetch(
+        `${API_BASE}/api/expenses/email/${emailId}`,
+        {
+          credentials: 'include',
+        }
+      );
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  const [extractingExpense, setExtractingExpense] = useState(false);
+
+  const triggerExpenseExtraction = async () => {
+    setExtractingExpense(true);
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/expenses/extract/${emailId}`,
+        {
+          method: 'POST',
+          credentials: 'include',
+        }
+      );
+      if (response.ok) {
+        refetchExpenses();
+      } else {
+        const err = await response.json();
+        alert(err.error || 'No expense data could be parsed from this email.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error triggering expense extraction.');
+    } finally {
+      setExtractingExpense(false);
     }
   };
 
@@ -624,24 +676,41 @@ export const EmailViewer: React.FC<EmailViewerProps> = ({
                     const isPending = evt.status === 'pending';
                     const isFailed = evt.status === 'failed';
                     return (
-                      <div key={idx} className="glass-panel p-3 rounded-xl border border-white/5 space-y-2 bg-indigo-500/[0.01]">
+                      <div
+                        key={idx}
+                        className="glass-panel p-3 rounded-xl border border-white/5 space-y-2 bg-indigo-500/[0.01]"
+                      >
                         <div className="flex justify-between items-start gap-2">
-                          <p className="text-xs font-semibold text-white leading-normal truncate">{evt.title}</p>
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${
-                            isPending ? 'bg-amber-400/10 text-amber-400 border border-amber-400/20' :
-                            isFailed ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                            'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          }`}>
-                            {isPending ? 'Sync Pending' : isFailed ? 'Failed' : 'Synced'}
+                          <p className="text-xs font-semibold text-white leading-normal truncate">
+                            {evt.title}
+                          </p>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${
+                              isPending
+                                ? 'bg-amber-400/10 text-amber-400 border border-amber-400/20'
+                                : isFailed
+                                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                  : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            }`}
+                          >
+                            {isPending
+                              ? 'Sync Pending'
+                              : isFailed
+                                ? 'Failed'
+                                : 'Synced'}
                           </span>
                         </div>
                         <div className="text-[10px] text-gray-400 space-y-1">
                           <p className="flex items-center gap-1.5">
                             <Clock size={10} className="shrink-0" />
-                            <span>{new Date(evt.startTime).toLocaleString()}</span>
+                            <span>
+                              {new Date(evt.startTime).toLocaleString()}
+                            </span>
                           </p>
                           {evt.location && (
-                            <p className="truncate text-left">📍 {evt.location}</p>
+                            <p className="truncate text-left">
+                              📍 {evt.location}
+                            </p>
                           )}
                         </div>
                         {evt.meetingLink && (
@@ -669,6 +738,140 @@ export const EmailViewer: React.FC<EmailViewerProps> = ({
                     className="py-1.5 px-4 text-[10px] font-bold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
                   >
                     {syncingCalendar ? 'Extracting...' : 'Extract & Create'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Extracted Expenses Section */}
+            <div className="space-y-2.5 border-t border-white/5 pt-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                  <Receipt size={12} className="text-emerald-400" />
+                  <span>Extracted Expenses</span>
+                </h4>
+                {expenses && expenses.length > 0 && (
+                  <button
+                    onClick={triggerExpenseExtraction}
+                    disabled={extractingExpense}
+                    className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {extractingExpense ? 'Re-extracting...' : 'Re-extract'}
+                  </button>
+                )}
+              </div>
+
+              {expenses && expenses.length > 0 ? (
+                <div className="space-y-2">
+                  {expenses.map((exp, idx) => {
+                    const isRecur = exp.isRecurring;
+                    const displaySymbol =
+                      exp.currency === 'JPY'
+                        ? '¥'
+                        : exp.currency === 'EUR'
+                          ? '€'
+                          : exp.currency === 'GBP'
+                            ? '£'
+                            : '$';
+                    return (
+                      <div
+                        key={idx}
+                        className="glass-panel p-3 rounded-xl border border-white/5 space-y-2 bg-emerald-500/[0.01]"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <p className="text-xs font-semibold text-white leading-normal truncate max-w-[120px]">
+                              {exp.merchantName || 'Unknown Merchant'}
+                            </p>
+                            <span className="text-[9px] text-gray-500 uppercase tracking-wider">
+                              {exp.category || 'other'}
+                            </span>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            {isRecur && (
+                              <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold uppercase tracking-wider animate-pulse flex items-center gap-0.5">
+                                <TrendingDown size={8} /> Recurring
+                              </span>
+                            )}
+                            <span className="text-[9px] text-gray-400">
+                              {exp.paymentMethod || 'Unknown'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-[10px] text-gray-300 flex justify-between items-center bg-black/20 p-2 rounded-lg border border-white/3">
+                          <div>
+                            <span className="text-xs font-bold text-white">
+                              {displaySymbol}
+                              {exp.amount?.toFixed(2)}
+                            </span>
+                            <span className="text-[10px] text-gray-400 font-medium ml-1">
+                              {exp.currency}
+                            </span>
+                          </div>
+                          {exp.currency !== 'USD' && exp.amountUsd && (
+                            <span className="text-[9px] text-gray-400 italic">
+                              ~${exp.amountUsd.toFixed(2)} USD
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-[9px] text-gray-500 flex justify-between items-center">
+                          <span>
+                            Tx Date:{' '}
+                            {exp.date
+                              ? new Date(exp.date).toLocaleDateString()
+                              : 'N/A'}
+                          </span>
+                        </div>
+
+                        {exp.items &&
+                          Array.isArray(exp.items) &&
+                          exp.items.length > 0 && (
+                            <div className="mt-2 border-t border-white/5 pt-2 space-y-1">
+                              <p className="text-[8px] font-bold text-gray-500 uppercase tracking-wide">
+                                Line Items
+                              </p>
+                              <div className="max-h-[100px] overflow-y-auto pr-1 space-y-1">
+                                {exp.items.map((item: any, i: number) => (
+                                  <div
+                                    key={i}
+                                    className="flex justify-between text-[10px] text-gray-400 bg-white/1 px-2 py-0.5 rounded"
+                                  >
+                                    <span className="truncate max-w-[130px]">
+                                      {item.name}{' '}
+                                      {item.quantity > 1
+                                        ? `x${item.quantity}`
+                                        : ''}
+                                    </span>
+                                    <span className="font-semibold text-gray-300 shrink-0">
+                                      {displaySymbol}
+                                      {item.unitPrice
+                                        ? item.unitPrice.toFixed(2)
+                                        : '0.00'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="glass-panel p-3.5 rounded-2xl border border-white/5 text-center bg-white/[0.01]">
+                  <p className="text-[11px] text-gray-400 leading-normal mb-2">
+                    No expense or receipt data extracted from this email yet.
+                  </p>
+                  <button
+                    onClick={triggerExpenseExtraction}
+                    disabled={extractingExpense}
+                    className="py-1.5 px-4 text-[10px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50"
+                  >
+                    {extractingExpense
+                      ? 'Extracting...'
+                      : 'Detect & Extract Expense'}
                   </button>
                 </div>
               )}

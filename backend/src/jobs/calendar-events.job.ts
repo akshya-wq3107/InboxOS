@@ -12,11 +12,16 @@ const getRedisConnectionOptions = (): ConnectionOptions => {
       port: parsed.port ? parseInt(parsed.port, 10) : 6379,
       username: parsed.username || undefined,
       password: parsed.password || undefined,
-      db: parsed.pathname ? parseInt(parsed.pathname.substring(1) || '0', 10) : 0,
+      db: parsed.pathname
+        ? parseInt(parsed.pathname.substring(1) || '0', 10)
+        : 0,
       maxRetriesPerRequest: null,
     };
   } catch (error) {
-    console.error('Failed to parse REDIS_URL, falling back to default localhost options:', error);
+    console.error(
+      'Failed to parse REDIS_URL, falling back to default localhost options:',
+      error
+    );
     return {
       host: 'localhost',
       port: 6379,
@@ -28,14 +33,20 @@ const getRedisConnectionOptions = (): ConnectionOptions => {
 const connection = getRedisConnectionOptions();
 
 // Queue for calendar event creation
-export const calendarEventsQueue = new Queue('calendarEventsQueue', { connection });
+export const calendarEventsQueue = new Queue('calendarEventsQueue', {
+  connection,
+});
 
 // Worker for calendar event creation
 export const calendarEventsWorker = new Worker(
   'calendarEventsQueue',
-  async (job: Job<{ userId: string; emailId: string; eventData: CalendarEventData }>) => {
+  async (
+    job: Job<{ userId: string; emailId: string; eventData: CalendarEventData }>
+  ) => {
     const { userId, emailId, eventData } = job.data;
-    logger.info(`[BullMQ Worker] Starting calendar event creation job ${job.id} for email: ${emailId}`);
+    logger.info(
+      `[BullMQ Worker] Starting calendar event creation job ${job.id} for email: ${emailId}`
+    );
 
     // Adjust date/time strings back to Date objects (since JSON serialization in BullMQ converts them to strings)
     const formattedEventData: CalendarEventData = {
@@ -45,10 +56,18 @@ export const calendarEventsWorker = new Worker(
     };
 
     try {
-      await CalendarCreatorService.createGoogleCalendarEvent(formattedEventData, userId, emailId);
-      logger.info(`[BullMQ Worker] Calendar event creation job ${job.id} succeeded.`);
+      await CalendarCreatorService.createGoogleCalendarEvent(
+        formattedEventData,
+        userId,
+        emailId
+      );
+      logger.info(
+        `[BullMQ Worker] Calendar event creation job ${job.id} succeeded.`
+      );
     } catch (err: any) {
-      logger.error(`[BullMQ Worker] Job ${job.id} failed with error: ${err.message || err}. Requeuing/Retrying.`);
+      logger.error(
+        `[BullMQ Worker] Job ${job.id} failed with error: ${err.message || err}. Requeuing/Retrying.`
+      );
       throw err; // Throw error to let BullMQ trigger attempts and retry
     }
   },

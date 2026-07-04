@@ -16,7 +16,12 @@ import {
 } from 'lucide-react';
 
 export const RegisterForm: React.FC = () => {
-  const { register, loginWithFirebase, error: authError, clearError } = useAuth();
+  const {
+    register,
+    loginWithFirebase,
+    error: authError,
+    clearError,
+  } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');

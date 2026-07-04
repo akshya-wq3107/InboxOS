@@ -7,7 +7,8 @@ export interface LinkMetadata {
   url: string;
   text: string;
   isButton: boolean;
-  category: 'unsubscribe' | 'confirm' | 'download' | 'meeting' | 'payment' | 'other';
+  category:
+    'unsubscribe' | 'confirm' | 'download' | 'meeting' | 'payment' | 'other';
   suspicious: boolean;
 }
 
@@ -45,7 +46,7 @@ export class LinkAttachmentExtractorService {
       const className = $(el).attr('class') || '';
       const styleAttr = $(el).attr('style') || '';
       const hasButtonInside = $(el).find('button').length > 0;
-      
+
       const isButton =
         /button|btn|cta/i.test(className) ||
         /background-color|background|border-radius|padding/i.test(styleAttr) ||
@@ -71,12 +72,19 @@ export class LinkAttachmentExtractorService {
       for (const link of links) {
         if (link.category === 'other') {
           try {
-            const llmCategory = await AIService.categorizeLink(link.url, link.text);
+            const llmCategory = await AIService.categorizeLink(
+              link.url,
+              link.text
+            );
             if (llmCategory && llmCategory !== 'other') {
               link.category = llmCategory as any;
             }
           } catch (e) {
-            console.error('[LinkAttachmentExtractor] LLM fallback failed for link:', link.url, e);
+            console.error(
+              '[LinkAttachmentExtractor] LLM fallback failed for link:',
+              link.url,
+              e
+            );
           }
         }
       }
@@ -98,9 +106,10 @@ export class LinkAttachmentExtractorService {
       const contentType = attachment.contentType || 'application/octet-stream';
       const byteSize = attachment.size || 0;
       const contentId = attachment.contentId || null;
-      
+
       // Inline vs Attached
-      const inline = attachment.contentDisposition === 'inline' || !!attachment.contentId;
+      const inline =
+        attachment.contentDisposition === 'inline' || !!attachment.contentId;
 
       // MD5 generation
       let md5 = '';
@@ -132,7 +141,8 @@ export class LinkAttachmentExtractorService {
     const cleanText = text.trim();
 
     // Check if the display text looks like a URL/domain
-    const urlLikeRegex = /^(https?:\/\/)?(www\.)?([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)/i;
+    const urlLikeRegex =
+      /^(https?:\/\/)?(www\.)?([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)/i;
     const matchText = cleanText.match(urlLikeRegex);
     if (!matchText) {
       return false;

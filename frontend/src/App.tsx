@@ -31,6 +31,8 @@ import {
   Mail,
   Radio,
   Bell,
+  Calendar,
+  Clock,
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -94,6 +96,61 @@ const DashboardContent: React.FC = () => {
     refetchInterval: 10000,
   });
 
+  // Load upcoming deadlines/reminders
+  const { data: upcomingReminders, refetch: refetchReminders } = useQuery<
+    any[]
+  >({
+    queryKey: ['upcoming-reminders'],
+    queryFn: async () => {
+      const response = await fetch(`${API_BASE}/api/reminders/upcoming`, {
+        credentials: 'include',
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
+    refetchInterval: 10000,
+  });
+
+  const handleSnooze = async (reminderId: string, duration: number) => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/reminders/${reminderId}/snooze`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ durationMinutes: duration }),
+          credentials: 'include',
+        }
+      );
+      if (response.ok) {
+        refetchReminders();
+      } else {
+        alert('Failed to snooze reminder');
+      }
+    } catch (err) {
+      console.error('Failed to snooze reminder:', err);
+    }
+  };
+
+  const handleCancelReminder = async (reminderId: string) => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/reminders/${reminderId}/cancel`,
+        {
+          method: 'POST',
+          credentials: 'include',
+        }
+      );
+      if (response.ok) {
+        refetchReminders();
+      } else {
+        alert('Failed to dismiss reminder');
+      }
+    } catch (err) {
+      console.error('Failed to dismiss reminder:', err);
+    }
+  };
+
   useEffect(() => {
     if (!socket) return;
 
@@ -101,6 +158,7 @@ const DashboardContent: React.FC = () => {
       setToastMessage(`New Task Extracted: ${data.title}`);
       setTimeout(() => setToastMessage(null), 4000);
       refetchStats();
+      refetchReminders();
     });
 
     socket.on('rule.executed', (data: any) => {
@@ -111,6 +169,7 @@ const DashboardContent: React.FC = () => {
 
     socket.on('email.received', () => {
       refetchStats();
+      refetchReminders();
     });
 
     return () => {
@@ -118,7 +177,7 @@ const DashboardContent: React.FC = () => {
       socket.off('rule.executed');
       socket.off('email.received');
     };
-  }, [socket, refetchStats]);
+  }, [socket, refetchStats, refetchReminders]);
 
   const getActiveTab = () => {
     const path = location.pathname;
@@ -161,6 +220,33 @@ const DashboardContent: React.FC = () => {
   const [signature, setSignature] = useState('');
   const [autoReply, setAutoReply] = useState(false);
   const [theme, setTheme] = useState('dark');
+  const [timezone, setTimezone] = useState('UTC');
+  const [digestSchedule, setDigestSchedule] = useState('daily');
+
+  // Digests list state
+  const [digests, setDigests] = useState<any[]>([]);
+  const [isGeneratingDigest, setIsGeneratingDigest] = useState(false);
+  const [isSendingDigest, setIsSendingDigest] = useState<string | null>(null);
+
+  const fetchDigests = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/digests?limit=5`, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setDigests(data.digests || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch digests:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'settings' && settingsSubTab === 'digests') {
+      fetchDigests();
+    }
+  }, [activeTab, settingsSubTab]);
 
   // Load preferences from backend settings API
   useEffect(() => {
@@ -176,6 +262,8 @@ const DashboardContent: React.FC = () => {
           setTheme(data.theme || 'dark');
           setSignature(data.signature || '');
           setAutoReply(!!data.autoReply);
+          setTimezone(data.timezone || 'UTC');
+          setDigestSchedule(data.digestSchedule || 'daily');
         }
       } catch (err) {
         console.error('Failed to load user settings:', err);
@@ -184,6 +272,104 @@ const DashboardContent: React.FC = () => {
 
     loadSettings();
   }, [activeTab]);
+
+  // Load Google Calendar status
+  const { data: calendarStatus, refetch: refetchCalendarStatus } = useQuery({
+    queryKey: ['calendar-status'],
+    queryFn: async () => {
+      const response = await fetch(
+        `${API_BASE}/api/integrations/google_calendar/status`,
+        {
+          credentials: 'include',
+        }
+      );
+      if (!response.ok) throw new Error('Failed to fetch calendar status');
+      return response.json();
+    },
+    enabled: activeTab === 'settings' && settingsSubTab === 'integrations',
+  });
+
+  const handleConnectCalendar = async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/integrations/google_calendar/auth`,
+        {
+          credentials: 'include',
+        }
+      );
+      if (!response.ok) throw new Error('Auth failed');
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert('Failed to initialize Google Calendar authentication');
+      }
+    } catch (err) {
+      alert('Error connecting to calendar authentication endpoint');
+    }
+  };
+
+  const handleDisconnectCalendar = async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/integrations/google_calendar`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        }
+      );
+      if (!response.ok) throw new Error('Disconnect failed');
+      refetchCalendarStatus();
+    } catch (err) {
+      alert('Error disconnecting calendar');
+    }
+  };
+
+  const handleGenerateDigest = async () => {
+    setIsGeneratingDigest(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/digests/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: digestSchedule === 'disabled' ? 'daily' : digestSchedule,
+        }),
+        credentials: 'include',
+      });
+      if (response.ok) {
+        await fetchDigests();
+        alert('Digest generated successfully!');
+      } else {
+        const errData = await response.json();
+        alert(`Failed to generate digest: ${errData.error || errData.message}`);
+      }
+    } catch (err) {
+      alert('Error generating digest');
+    } finally {
+      setIsGeneratingDigest(false);
+    }
+  };
+
+  const handleSendDigest = async (digestId: string) => {
+    setIsSendingDigest(digestId);
+    try {
+      const response = await fetch(`${API_BASE}/api/digests/${digestId}/send`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (response.ok) {
+        await fetchDigests();
+        alert('Digest email sent successfully!');
+      } else {
+        const errData = await response.json();
+        alert(`Failed to send digest: ${errData.error || errData.message}`);
+      }
+    } catch (err) {
+      alert('Error sending digest');
+    } finally {
+      setIsSendingDigest(null);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,6 +384,8 @@ const DashboardContent: React.FC = () => {
           theme,
           signature: signature || null,
           autoReply,
+          timezone,
+          digestSchedule,
         }),
         credentials: 'include',
       });
@@ -288,6 +476,11 @@ const DashboardContent: React.FC = () => {
                   id: 'notifications',
                   label: 'Alert Rules',
                   icon: <Bell size={16} />,
+                },
+                {
+                  id: 'digests',
+                  label: 'Email Digests',
+                  icon: <Sliders size={16} />,
                 },
               ].map((subTab) => (
                 <button
@@ -568,6 +761,50 @@ const DashboardContent: React.FC = () => {
                       </button>
                     </div>
 
+                    {/* Google Calendar */}
+                    <div className="flex items-center justify-between p-4 rounded-xl bg-white/3 border border-white/5">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 bg-indigo-500/10 text-indigo-400 rounded-xl flex items-center justify-center shrink-0">
+                          <Calendar size={18} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-white">
+                            Google Calendar
+                          </p>
+                          <p
+                            className={`text-[10px] flex items-center gap-1 font-medium ${
+                              calendarStatus?.connected
+                                ? 'text-emerald-400'
+                                : 'text-gray-500'
+                            }`}
+                          >
+                            {calendarStatus?.connected ? (
+                              <>
+                                <span className="h-1.5 w-1.5 bg-emerald-400 rounded-full animate-pulse" />{' '}
+                                Connected
+                              </>
+                            ) : (
+                              'Not Connected'
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={
+                          calendarStatus?.connected
+                            ? handleDisconnectCalendar
+                            : handleConnectCalendar
+                        }
+                        className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all uppercase tracking-wider ${
+                          calendarStatus?.connected
+                            ? 'bg-white/5 hover:bg-white/10 text-gray-300 border-white/5'
+                            : 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent'
+                        }`}
+                      >
+                        {calendarStatus?.connected ? 'Disconnect' : 'Connect'}
+                      </button>
+                    </div>
+
                     {/* Telegram Bot */}
                     <div className="border-t border-white/5 pt-5 space-y-4">
                       <h4 className="text-xs font-semibold text-gray-300">
@@ -747,6 +984,169 @@ const DashboardContent: React.FC = () => {
                     </button>
                   </div>
                 </form>
+              )}
+
+              {settingsSubTab === 'digests' && (
+                <div className="space-y-6 text-left">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white mb-1">
+                      Email Digests Settings
+                    </h3>
+                    <p className="text-[11px] text-gray-500">
+                      Configure your automated low-priority email digests and
+                      delivery timezones.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleSave} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                          Digest Schedule
+                        </label>
+                        <select
+                          value={digestSchedule}
+                          onChange={(e) => setDigestSchedule(e.target.value)}
+                          className="w-full bg-[#131625] border border-white/5 rounded-xl px-4 py-2.5 text-xs text-gray-100 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/25 transition-all"
+                        >
+                          <option value="daily">
+                            Daily Digest (at 8:00 AM)
+                          </option>
+                          <option value="weekly">
+                            Weekly Digest (Mondays at 8:00 AM)
+                          </option>
+                          <option value="disabled">Disabled</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                          Schedule Timezone
+                        </label>
+                        <select
+                          value={timezone}
+                          onChange={(e) => setTimezone(e.target.value)}
+                          className="w-full bg-[#131625] border border-white/5 rounded-xl px-4 py-2.5 text-xs text-gray-100 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/25 transition-all"
+                        >
+                          <option value="UTC">
+                            UTC (Universal Coordinated Time)
+                          </option>
+                          <option value="America/New_York">
+                            EST/EDT (America/New_York)
+                          </option>
+                          <option value="America/Chicago">
+                            CST/CDT (America/Chicago)
+                          </option>
+                          <option value="America/Denver">
+                            MST/MDT (America/Denver)
+                          </option>
+                          <option value="America/Los_Angeles">
+                            PST/PDT (America/Los_Angeles)
+                          </option>
+                          <option value="Europe/London">
+                            GMT/BST (Europe/London)
+                          </option>
+                          <option value="Europe/Paris">
+                            CET/CEST (Europe/Paris)
+                          </option>
+                          <option value="Asia/Tokyo">JST (Asia/Tokyo)</option>
+                          <option value="Asia/Kolkata">
+                            IST (Asia/Kolkata)
+                          </option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2">
+                      <button
+                        type="button"
+                        onClick={handleGenerateDigest}
+                        disabled={isGeneratingDigest}
+                        className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-200 border border-white/5 font-bold text-xs uppercase tracking-wider disabled:opacity-50"
+                      >
+                        {isGeneratingDigest
+                          ? 'Generating...'
+                          : 'Compile Digest Now'}
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={isSaving}
+                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all active:scale-[0.98] disabled:opacity-50 uppercase tracking-wider"
+                      >
+                        {isSaving ? 'Saving...' : 'Save Digest Preferences'}
+                      </button>
+                    </div>
+                  </form>
+
+                  <div className="border-t border-white/5 pt-5 space-y-4">
+                    <h4 className="text-xs font-semibold text-gray-300">
+                      Recent Generated Digests
+                    </h4>
+
+                    {digests.length === 0 ? (
+                      <div className="p-8 rounded-xl bg-white/3 border border-white/5 text-center text-xs text-gray-500">
+                        No digests generated yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {digests.map((d) => {
+                          const contentData = d.content as any;
+                          return (
+                            <div
+                              key={d.id}
+                              className="p-4 rounded-xl bg-white/3 border border-white/5 space-y-3"
+                            >
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <span className="text-xs font-bold text-indigo-400 capitalize">
+                                    {d.type} Digest
+                                  </span>
+                                  <span className="text-[10px] text-gray-500 ml-2">
+                                    Generated:{' '}
+                                    {new Date(d.createdAt).toLocaleString()}
+                                  </span>
+                                  <div className="text-[10px] text-gray-400 mt-1">
+                                    Status:{' '}
+                                    <span
+                                      className={`font-bold ${d.status === 'sent' ? 'text-emerald-400' : d.status === 'failed' ? 'text-rose-400' : 'text-amber-400'}`}
+                                    >
+                                      {d.status}
+                                    </span>
+                                    {d.sentAt &&
+                                      ` (Sent: ${new Date(d.sentAt).toLocaleString()})`}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => handleSendDigest(d.id)}
+                                  disabled={isSendingDigest === d.id}
+                                  className="px-3 py-1.5 rounded-lg bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-300 border border-indigo-500/20 text-[10px] font-bold transition-all uppercase tracking-wider disabled:opacity-50"
+                                >
+                                  {isSendingDigest === d.id
+                                    ? 'Sending...'
+                                    : 'Send Test Email'}
+                                </button>
+                              </div>
+
+                              <div className="rounded-lg border border-white/5 bg-black/30 overflow-hidden">
+                                <div className="bg-white/5 px-3 py-2 text-[10px] text-gray-400 font-bold border-b border-white/5">
+                                  HTML Preview (Dark Glassmorphism)
+                                </div>
+                                <div className="p-1 h-[320px] bg-[#0d0f1a]">
+                                  <iframe
+                                    title={`Preview of ${d.id}`}
+                                    srcDoc={contentData?.html || ''}
+                                    className="w-full h-full border-none rounded"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </div>
