@@ -20,7 +20,8 @@ async function runTest() {
     createdAt: new Date(),
     userId: 'user-id-abc',
     threadId: 'thread-id-xyz',
-    embedding: null,
+    links: [],
+    attachments: [],
   };
 
   console.log('Starting Discord notification test...');

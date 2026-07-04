@@ -49,4 +49,16 @@ export class RedisService {
       console.warn(`Redis SETEX error for key ${key}:`, err);
     }
   }
+
+  public static async del(key: string): Promise<void> {
+    try {
+      const client = this.getClient();
+      if (client.status === 'ready' || client.status === 'connecting') {
+        await client.del(key);
+      }
+    } catch (err) {
+      console.warn(`Redis DEL error for key ${key}:`, err);
+    }
+  }
 }
+

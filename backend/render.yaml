@@ -1,0 +1,129 @@
+# Render Blueprint — InboxOS Backend
+# Deploy: render.com → New → Blueprint → Connect this repo
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # ─── Backend API Service ───────────────────────────────────────────────────
+  - type: web
+    name: inboxos-backend
+    runtime: node
+    region: oregon
+    plan: starter
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8000"
+
+      # Database — Render PostgreSQL (auto-populated if using Render DB)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: inboxos-db
+          property: connectionString
+
+      # Redis — Render Redis (auto-populated if using Render Redis)
+      - key: REDIS_URL
+        fromService:
+          name: inboxos-redis
+          type: redis
+          property: connectionString
+
+      # Auth & Encryption — set via Render dashboard
+      - key: JWT_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+
+      # AI Provider
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+      # Gmail OAuth
+      - key: GMAIL_CLIENT_ID
+        sync: false
+      - key: GMAIL_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_REDIRECT_URI
+        sync: false
+
+      # Outlook OAuth
+      - key: OUTLOOK_CLIENT_ID
+        sync: false
+      - key: OUTLOOK_CLIENT_SECRET
+        sync: false
+      - key: OUTLOOK_REDIRECT_URI
+        sync: false
+
+      # Firebase Admin
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+
+      # Frontend CORS
+      - key: FRONTEND_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+      # Telegram
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_WEBHOOK_URL
+        sync: false
+
+      # Metrics
+      - key: METRICS_TOKEN
+        sync: false
+
+      # SMTP
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+      # Twilio / WhatsApp (optional)
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+
+  # ─── PostgreSQL Database ───────────────────────────────────────────────────
+  - type: pserv
+    name: inboxos-db
+    runtime: postgres
+    plan: starter
+    region: oregon
+    postgresMajorVersion: 15
+    databaseName: inboxos
+    user: inboxos
+
+  # ─── Redis ─────────────────────────────────────────────────────────────────
+  - type: redis
+    name: inboxos-redis
+    plan: starter
+    region: oregon
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Only accessible by Render services

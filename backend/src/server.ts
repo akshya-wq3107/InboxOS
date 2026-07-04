@@ -6,6 +6,8 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 import express, { Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import compression from 'compression';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthService } from './services/auth.service';
@@ -26,20 +28,67 @@ import { registerWorkerHandlers } from './worker';
 import { Server as SocketIoServer } from 'socket.io';
 import { WebSocketService } from './services/websocket.service';
 import { TelegramBotService } from './services/telegram-bot.service';
+import { LinkAttachmentExtractorService } from './services/parser/link-attachment-extractor.service';
 import { TelegramNotificationService } from './services/telegram-notification.service';
 import { ReminderSchedulerService } from './services/actions/reminder-scheduler.service';
 
 const app = express();
+
+// Initialize Firebase Admin SDK if credentials are provided
+let firebaseAdminApp: any = null;
+if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  try {
+    firebaseAdminApp = initializeApp({
+      credential: cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+    });
+    logger.info('Firebase Admin SDK initialized successfully');
+  } catch (err) {
+    logger.error('Failed to initialize Firebase Admin SDK:', err);
+  }
+} else {
+  logger.warn('Firebase Admin credentials not fully configured in environment variables.');
+}
+
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 8000;
+
+// Security & performance middleware
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+}));
+app.use(compression());
+
+// Request timeout (30 seconds)
+app.use((req, res, next) => {
+  res.setTimeout(30000, () => {
+    res.status(408).json({ error: 'Request timeout' });
+  });
+  next();
+});
+
+// CORS: allow localhost in dev + production frontend domains
+const ALLOWED_ORIGINS = [
+  'http://localhost',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : []),
+];
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (
     origin &&
-    (origin === 'http://localhost' ||
+    (ALLOWED_ORIGINS.some(o => origin === o) ||
       origin.startsWith('http://localhost:') ||
-      origin === 'http://127.0.0.1' ||
       origin.startsWith('http://127.0.0.1:'))
   ) {
     res.setHeader('Access-Control-Allow-Origin', origin);
@@ -98,7 +147,6 @@ app.get('/metrics', async (req: Request, res: Response) => {
 
 app.use(express.json());
 app.use(cookieParser());
-app.use('/api', rateLimiter);
 
 /**
  * GET /api/health
@@ -244,6 +292,85 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/auth/firebase
+ * Accepts Firebase ID token, verifies it, finds/creates a user, and returns standard JWT cookie.
+ */
+app.post('/api/auth/firebase', async (req: Request, res: Response) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ error: 'Firebase idToken is required' });
+    }
+
+    if (!firebaseAdminApp) {
+      return res.status(500).json({ error: 'Firebase Admin is not configured on this server.' });
+    }
+
+    // Verify token
+    const decodedToken = await getAuth().verifyIdToken(idToken);
+    const email = decodedToken.email;
+    if (!email) {
+      return res.status(400).json({ error: 'Email not present in Firebase token' });
+    }
+
+    // Check if user exists
+    let user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      // Create user with a dummy password hash (since they authenticate with Google/Firebase)
+      const dummyPassword = crypto.randomBytes(32).toString('hex');
+      const passwordHash = await AuthService.hashPassword(dummyPassword);
+
+      user = await prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+        },
+      });
+    }
+
+    // Generate internal JWT token
+    const token = AuthService.generateToken(user.id, user.email);
+
+    // Set cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    });
+
+    // Telegram security alert
+    try {
+      const userSettings = await prisma.userSettings.findFirst({
+        where: { userId: user.id, telegramEnabled: true },
+      });
+      if (userSettings && userSettings.telegramChatId) {
+        await TelegramNotificationService.sendAuthAlert(
+          userSettings.telegramChatId,
+          `New Google login via Firebase detected on your InboxOS account (${user.email}) at ${new Date().toISOString()}`
+        );
+      }
+    } catch (teleErr) {
+      logger.error('Failed to send Telegram auth alert:', teleErr);
+    }
+
+    return res.status(200).json({
+      message: 'Logged in successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+      },
+    });
+  } catch (error: any) {
+    console.error('Firebase Auth error:', error);
+    return res.status(401).json({ error: 'Invalid Firebase ID token' });
   }
 });
 
@@ -395,6 +522,7 @@ app.post('/api/webhooks/incoming', async (req: Request, res: Response) => {
     }
 
     // 4. Create the Email record
+    const links = await LinkAttachmentExtractorService.extractLinks(body);
     const emailRecord = await prisma.email.create({
       data: {
         messageId,
@@ -406,6 +534,8 @@ app.post('/api/webhooks/incoming', async (req: Request, res: Response) => {
         status: 'UNREAD',
         userId: user.id,
         threadId,
+        links: links as any,
+        attachments: [],
       },
     });
 
@@ -692,8 +822,238 @@ app.get(
         .status(200)
         .json({ message: 'Gmail connected successfully', emailAddress });
     } catch (error) {
-      console.error('OAuth callback error:', error);
       return res.status(500).json({ error: 'OAuth integration failed' });
+    }
+  }
+);
+
+/**
+ * GET /api/integrations/google_calendar/status
+ * Check if the user has connected Google Calendar.
+ */
+app.get(
+  '/api/integrations/google_calendar/status',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+      const integration = await prisma.integration.findUnique({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'google_calendar',
+          },
+        },
+      });
+      return res.json({ connected: !!integration });
+    } catch (error) {
+      console.error('Error fetching calendar status:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * GET /api/integrations/google_calendar/auth
+ * Generates the Google Calendar OAuth URL.
+ */
+app.get(
+  '/api/integrations/google_calendar/auth',
+  requireAuth,
+  (req: AuthenticatedRequest, res: Response) => {
+    const redirectUri = (process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/api/integrations/gmail/callback')
+      .replace('/gmail/callback', '/google_calendar/callback');
+
+    const calendarOauth2Client = new google.auth.OAuth2(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      redirectUri
+    );
+
+    const url = calendarOauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: [
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/calendar.events'
+      ],
+      prompt: 'consent',
+      state: req.user?.userId,
+    });
+    return res.json({ url });
+  }
+);
+
+/**
+ * GET /api/integrations/google_calendar/callback
+ * Exchanges the auth code for tokens and saves them to Prisma securely.
+ */
+app.get(
+  '/api/integrations/google_calendar/callback',
+  async (req: Request, res: Response) => {
+    const code = req.query.code as string;
+    const userId = req.query.state as string;
+
+    if (!code || !userId) {
+      return res
+        .status(400)
+        .json({ error: 'Missing code or state parameters' });
+    }
+
+    try {
+      const calendarOauth2Client = new google.auth.OAuth2(
+        process.env.GMAIL_CLIENT_ID,
+        process.env.GMAIL_CLIENT_SECRET,
+        (process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/api/integrations/gmail/callback')
+          .replace('/gmail/callback', '/google_calendar/callback')
+      );
+
+      const { tokens } = await calendarOauth2Client.getToken(code);
+      const encryptedTokens = encrypt(JSON.stringify(tokens));
+
+      await prisma.integration.upsert({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'google_calendar',
+          },
+        },
+        update: {
+          encryptedTokens,
+          updatedAt: new Date(),
+        },
+        create: {
+          userId,
+          provider: 'google_calendar',
+          encryptedTokens,
+        },
+      });
+
+      // Redirect back to frontend
+      return res.redirect('http://localhost:5173/');
+    } catch (error) {
+      console.error('Calendar OAuth callback error:', error);
+      return res.status(500).json({ error: 'OAuth integration failed' });
+    }
+  }
+);
+
+/**
+ * POST /api/actions/calendar/events
+ * Triggers extracting meeting details from email and creating a calendar event.
+ */
+app.post(
+  '/api/actions/calendar/events',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { emailId } = req.body;
+    const userId = req.user?.userId;
+
+    if (!emailId || !userId) {
+      return res.status(400).json({ error: 'Missing emailId or userId' });
+    }
+
+    try {
+      // 1. Fetch Email
+      const email = await prisma.email.findUnique({
+        where: { id: emailId },
+        include: { analysis: true },
+      });
+
+      if (!email) {
+        return res.status(404).json({ error: 'Email not found' });
+      }
+
+      // 2. Extract Event Details
+      const eventData = CalendarExtractorService.extractEventDetails(email.analysis || email);
+      if (!eventData) {
+        return res.status(400).json({ error: 'No meeting details could be extracted from this email' });
+      }
+
+      // 3. Attempt creation
+      try {
+        const savedEvent = await CalendarCreatorService.createGoogleCalendarEvent(eventData, userId, emailId);
+        return res.status(201).json({ success: true, event: savedEvent });
+      } catch (err: any) {
+        if (err.message === 'MISSING_GOOGLE_CALENDAR_CREDENTIALS') {
+          logger.info(`[CalendarRoute] Missing credentials. Queueing calendar event creation for email: ${emailId}`);
+          
+          // Save a placeholder event with 'pending' status in db
+          const pendingEvent = await prisma.calendarEvent.upsert({
+            where: {
+              googleEventId: 'failed_' + emailId,
+            },
+            update: {
+              status: 'pending',
+            },
+            create: {
+              userId,
+              emailId,
+              title: eventData.title,
+              startTime: eventData.startTime,
+              endTime: eventData.endTime,
+              location: eventData.location,
+              attendees: eventData.attendees,
+              meetingLink: eventData.meetingLink,
+              googleEventId: 'failed_' + emailId,
+              status: 'pending',
+            },
+          });
+
+          await calendarEventsQueue.add('createEvent', {
+            userId,
+            emailId,
+            eventData,
+          }, {
+            attempts: 5,
+            backoff: {
+              type: 'exponential',
+              delay: 5000,
+            },
+          });
+
+          return res.status(202).json({
+            success: true,
+            message: 'Google Calendar credentials missing. Retrying creation in background.',
+            event: pendingEvent,
+          });
+        }
+        throw err;
+      }
+    } catch (error: any) {
+      console.error('Error creating calendar event:', error);
+      return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * GET /api/actions/calendar/events/:emailId
+ * Retrieves calendar events associated with an email.
+ */
+app.get(
+  '/api/actions/calendar/events/:emailId',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { emailId } = req.params;
+    const userId = req.user?.userId;
+
+    if (!emailId || !userId) {
+      return res.status(400).json({ error: 'Missing emailId or userId' });
+    }
+
+    try {
+      const events = await prisma.calendarEvent.findMany({
+        where: {
+          emailId: emailId as string,
+          userId: userId as string,
+        },
+      });
+      return res.json(events);
+    } catch (error) {
+      console.error('Error fetching calendar events:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
 );
@@ -775,7 +1135,7 @@ app.get(
       const hooks = await prisma.webhookEndpoint.findMany({
         where: { userId },
       });
-      const formatted = hooks.map((h) => ({
+      const formatted = hooks.map((h: any) => ({
         id: h.id,
         targetUrl: h.targetUrl,
         events: JSON.parse(h.events),
@@ -832,6 +1192,146 @@ app.delete(
       return res.json({ message: 'Webhook deleted' });
     } catch (err) {
       return res.status(500).json({ error: 'Failed to delete webhook' });
+    }
+  }
+);
+
+// PUT alias for PATCH /api/webhooks/config/:id
+app.put(
+  '/api/webhooks/config/:id',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { targetUrl, events } = req.body;
+      const id = req.params.id as string;
+
+      const hook = await prisma.webhookEndpoint.findUnique({ where: { id } });
+      if (!hook || hook.userId !== userId)
+        return res.status(404).json({ error: 'Not found' });
+
+      await prisma.webhookEndpoint.update({
+        where: { id },
+        data: {
+          ...(targetUrl && { targetUrl }),
+          ...(events && { events: JSON.stringify(events) }),
+        },
+      });
+      return res.json({ message: 'Webhook updated' });
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to update webhook' });
+    }
+  }
+);
+
+
+/**
+ * GET /api/dashboard/stats
+ * Returns live dashboard metrics/statistics for the authenticated user.
+ */
+app.get(
+  '/api/dashboard/stats',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const now = new Date();
+      const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const prev24h = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
+      // 1. Total Ingested
+      const totalIngested = await prisma.email.count({
+        where: { userId },
+      });
+      const last24hIngested = await prisma.email.count({
+        where: { userId, createdAt: { gte: last24h } },
+      });
+      const prev24hIngested = await prisma.email.count({
+        where: { userId, createdAt: { gte: prev24h, lt: last24h } },
+      });
+      let ingestedChange = 0;
+      if (prev24hIngested > 0) {
+        ingestedChange = Math.round(((last24hIngested - prev24hIngested) / prev24hIngested) * 100);
+      } else if (last24hIngested > 0) {
+        ingestedChange = 100;
+      }
+
+      // 2. Urgent / Pending Actions
+      const pendingActions = await prisma.actionItem.count({
+        where: {
+          isCompleted: false,
+          email: { userId },
+        },
+      });
+      const last24hPending = await prisma.actionItem.count({
+        where: {
+          isCompleted: false,
+          email: { userId },
+          createdAt: { gte: last24h },
+        },
+      });
+      const prev24hPending = await prisma.actionItem.count({
+        where: {
+          isCompleted: false,
+          email: { userId },
+          createdAt: { gte: prev24h, lt: last24h },
+        },
+      });
+      let pendingChange = 0;
+      if (prev24hPending > 0) {
+        pendingChange = Math.round(((last24hPending - prev24hPending) / prev24hPending) * 100);
+      } else if (last24hPending > 0) {
+        pendingChange = 100;
+      }
+
+      // 3. Resolved Rate
+      const totalTasks = await prisma.actionItem.count({
+        where: { email: { userId } },
+      });
+      const completedTasks = await prisma.actionItem.count({
+        where: { isCompleted: true, email: { userId } },
+      });
+      const resolutionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+      // Previous 24h resolution rate to calculate trend
+      const prevTotalTasks = await prisma.actionItem.count({
+        where: { email: { userId }, createdAt: { lt: last24h } },
+      });
+      const prevCompletedTasks = await prisma.actionItem.count({
+        where: { isCompleted: true, email: { userId }, createdAt: { lt: last24h } },
+      });
+      const prevResolutionRate = prevTotalTasks > 0 ? Math.round((prevCompletedTasks / prevTotalTasks) * 100) : 0;
+
+      let resolutionChange = 0;
+      if (prevResolutionRate > 0) {
+        resolutionChange = Math.round(((resolutionRate - prevResolutionRate) / prevResolutionRate) * 100);
+      } else if (resolutionRate > 0) {
+        resolutionChange = 100;
+      }
+
+      return res.status(200).json({
+        totalIngested: {
+          value: totalIngested,
+          change: `${ingestedChange >= 0 ? '+' : ''}${ingestedChange}%`,
+          isPositive: ingestedChange >= 0,
+        },
+        pendingActions: {
+          value: pendingActions,
+          change: `${pendingChange >= 0 ? '+' : ''}${pendingChange}%`,
+          isPositive: pendingChange <= 0, // decrease in pending items is positive
+        },
+        resolutionRate: {
+          value: `${resolutionRate}%`,
+          change: `${resolutionChange >= 0 ? '+' : ''}${resolutionChange}%`,
+          isPositive: resolutionChange >= 0,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to calculate dashboard stats:', error);
+      return res.status(500).json({ error: 'Internal server error' });
     }
   }
 );
@@ -1188,7 +1688,7 @@ app.put(
         validation.data;
 
       // Run delete-then-create inside a transaction
-      const updatedRule = await prisma.$transaction(async (tx) => {
+      const updatedRule = await prisma.$transaction(async (tx: any) => {
         await tx.ruleCondition.deleteMany({ where: { ruleId: id } });
         await tx.ruleAction.deleteMany({ where: { ruleId: id } });
 

@@ -51,6 +51,8 @@ model Email {
   status      String   @default("UNREAD")
   category    String?  // Added for email classification
   createdAt   DateTime @default(now())
+  links       Json?
+  attachments Json?
 
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -64,6 +66,24 @@ model Email {
   @@index([userId])
   @@index([threadId])
   @@index([createdAt])
+}
+
+model EmailAnalysis {
+  id              String   @id @default(uuid())
+  emailId         String   @unique
+  email           Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  deadlines       String[] // Added deadlines string[]
+  category        String?
+  priorityScore   Float?   @default(0.0)
+  urgencyScore    Float?   @default(0.0)
+  actionabilityScore Float? @default(0.0)
+  confidenceScore Float?   @default(0.0)
+  summary         String?
+  reasoning       String?
+  suggestedReply  String?
+  extractedData   Json?
+  aiProvider      String?  @default("mock")
+  analyzedAt      DateTime @default(now())
 }
 
 model ActionItem {
@@ -197,3 +217,119 @@ model RuleExecutionLog {
 
   rule         Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 }
+
+model Integration {
+  id              String   @id @default(uuid())
+  userId          String
+  provider        String   // 'google_calendar' or similar
+  encryptedTokens String   // Encrypted refresh & access tokens
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+model CalendarEvent {
+  id            String   @id @default(uuid())
+  userId        String
+  emailId       String
+  title         String
+  startTime     DateTime
+  endTime       DateTime
+  location      String?
+  attendees     String[]
+  meetingLink   String?
+  googleEventId String?  @unique
+  status        String   // 'pending' | 'created' | 'failed'
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email         Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([emailId])
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  userId      String
+  emailId     String?
+  merchant    String?
+  amount      Float?
+  currency    String?  @default("USD")
+  category    String?
+  date        DateTime?
+  rawData     Json?
+  createdAt   DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("expenses")
+}
+
+model Digest {
+  id          String   @id @default(uuid())
+  userId      String
+  type        String   @default("daily") // 'daily' | 'weekly'
+  content     String
+  emailCount  Int      @default(0)
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("digests")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // 'email_received' | 'action_item' | 'digest' | 'system'
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+model Reminder {
+  id          String   @id @default(uuid())
+  userId      String
+  emailId     String?
+  title       String
+  dueAt       DateTime
+  isSent      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([dueAt])
+  @@map("reminders")
+}
+
+model UserFeedback {
+  id            String   @id @default(uuid())
+  userId        String
+  emailId       String?
+  feedbackType  String   // 'thumbs_up' | 'thumbs_down'
+  feature       String?  // 'classify' | 'summarize' | 'reply' | 'extract_actions'
+  comment       String?
+  createdAt     DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_feedback")
+}
+
