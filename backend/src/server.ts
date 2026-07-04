@@ -6,6 +6,8 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 import express, { Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import compression from 'compression';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthService } from './services/auth.service';
@@ -29,6 +31,18 @@ import { TelegramBotService } from './services/telegram-bot.service';
 import { TelegramNotificationService } from './services/telegram-notification.service';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+
+// Route imports
+import { ragRouter } from './routes/rag.routes';
+import { aiRouter } from './routes/ai.routes';
+import { tasksRouter } from './routes/tasks.routes';
+import { calendarRouter } from './routes/calendar.routes';
+import { expensesRouter } from './routes/expenses.routes';
+import { digestsRouter } from './routes/digests.routes';
+import { notificationsRouter } from './routes/notifications.routes';
+import { feedbackRouter } from './routes/feedback.routes';
+import { integrationsRouter } from './routes/integrations.routes';
+
 import { CalendarExtractorService } from './services/actions/calendar-extractor.service';
 import { CalendarCreatorService } from './services/actions/calendar-creator.service';
 import { calendarEventsQueue } from './jobs/calendar-events.job';
@@ -57,13 +71,39 @@ if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && proc
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 8000;
 
+// Security & performance middleware
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+}));
+app.use(compression());
+
+// Request timeout (30 seconds)
+app.use((req, res, next) => {
+  res.setTimeout(30000, () => {
+    res.status(408).json({ error: 'Request timeout' });
+  });
+  next();
+});
+
+// CORS: allow localhost in dev + production frontend domains
+const ALLOWED_ORIGINS = [
+  'http://localhost',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : []),
+];
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (
     origin &&
-    (origin === 'http://localhost' ||
+    (ALLOWED_ORIGINS.some(o => origin === o) ||
       origin.startsWith('http://localhost:') ||
-      origin === 'http://127.0.0.1' ||
       origin.startsWith('http://127.0.0.1:'))
   ) {
     res.setHeader('Access-Control-Allow-Origin', origin);
@@ -1168,6 +1208,36 @@ app.delete(
   }
 );
 
+// PUT alias for PATCH /api/webhooks/config/:id
+app.put(
+  '/api/webhooks/config/:id',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { targetUrl, events } = req.body;
+      const id = req.params.id as string;
+
+      const hook = await prisma.webhookEndpoint.findUnique({ where: { id } });
+      if (!hook || hook.userId !== userId)
+        return res.status(404).json({ error: 'Not found' });
+
+      await prisma.webhookEndpoint.update({
+        where: { id },
+        data: {
+          ...(targetUrl && { targetUrl }),
+          ...(events && { events: JSON.stringify(events) }),
+        },
+      });
+      return res.json({ message: 'Webhook updated' });
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to update webhook' });
+    }
+  }
+);
+
+
 /**
  * GET /api/dashboard/stats
  * Returns live dashboard metrics/statistics for the authenticated user.
@@ -1742,6 +1812,298 @@ app.get('/api/auth/google', (req: Request, res: Response) => {
   });
   return res.json({ url });
 });
+
+/**
+ * POST /api/auth/refresh
+ * Refresh JWT token using existing valid cookie token.
+ */
+app.post('/api/auth/refresh', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const email = req.user?.email;
+    if (!userId || !email) return res.status(401).json({ error: 'Unauthorized' });
+
+    const newToken = AuthService.generateToken(userId, email);
+    res.cookie('token', newToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+    return res.json({ message: 'Token refreshed successfully' });
+  } catch (err: any) {
+    logger.error('[Auth] Refresh error:', err.message);
+    return res.status(500).json({ error: 'Failed to refresh token' });
+  }
+});
+
+/**
+ * PUT /api/users/profile
+ * Update user profile fields
+ */
+const updateProfileSchema = z.object({
+  email: z.string().email().optional(),
+});
+
+app.put(
+  '/api/users/profile',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const validation = updateProfileSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: 'Invalid payload', details: validation.error.flatten() });
+      }
+
+      const { email } = validation.data;
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: { ...(email && { email }) },
+        select: { id: true, email: true, createdAt: true },
+      });
+
+      // Invalidate profile cache
+      await RedisService.del(`user:profile:${userId}`);
+      return res.json(updated);
+    } catch (err: any) {
+      logger.error('[Users] PUT /profile error:', err.message);
+      return res.status(500).json({ error: 'Failed to update profile' });
+    }
+  }
+);
+
+/**
+ * GET /api/users/me/ai-profile
+ * Returns AI behavior profile for the user (feedback stats + settings)
+ */
+app.get(
+  '/api/users/me/ai-profile',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const [settings, feedbackCount, totalEmails] = await Promise.all([
+        prisma.userSettings.findUnique({ where: { userId } }),
+        prisma.userFeedback.count({ where: { userId } }),
+        prisma.email.count({ where: { userId } }),
+      ]);
+
+      const aiProvider = process.env.AI_PROVIDER || 'openai';
+      return res.json({
+        aiProvider,
+        totalEmailsProcessed: totalEmails,
+        feedbackGiven: feedbackCount,
+        preferences: {
+          theme: settings?.theme || 'dark',
+          autoReply: settings?.autoReply || false,
+        },
+      });
+    } catch (err: any) {
+      logger.error('[Users] GET /me/ai-profile error:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch AI profile' });
+    }
+  }
+);
+
+/**
+ * GET /api/users/me/dnd
+ * Get Do Not Disturb settings
+ */
+app.get(
+  '/api/users/me/dnd',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const settings = await prisma.userSettings.findUnique({ where: { userId } });
+      return res.json({
+        dndEnabled: settings?.dndEnabled || false,
+        dndStart: settings?.dndStart || null,
+        dndEnd: settings?.dndEnd || null,
+      });
+    } catch (err: any) {
+      logger.error('[Users] GET /me/dnd error:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch DnD settings' });
+    }
+  }
+);
+
+const dndSchema = z.object({
+  dndEnabled: z.boolean(),
+  dndStart: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
+  dndEnd: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
+});
+
+/**
+ * POST /api/users/me/dnd
+ * Enable or disable Do Not Disturb mode
+ */
+app.post(
+  '/api/users/me/dnd',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const validation = dndSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: 'Invalid payload', details: validation.error.flatten() });
+      }
+
+      const { dndEnabled, dndStart, dndEnd } = validation.data;
+      const settings = await prisma.userSettings.upsert({
+        where: { userId },
+        update: { dndEnabled, dndStart: dndStart ?? null, dndEnd: dndEnd ?? null },
+        create: { userId, dndEnabled, dndStart: dndStart ?? null, dndEnd: dndEnd ?? null },
+      });
+
+      logger.info('[Users] DnD settings updated', { userId, dndEnabled });
+      return res.json({ dndEnabled: settings.dndEnabled, dndStart: settings.dndStart, dndEnd: settings.dndEnd });
+    } catch (err: any) {
+      logger.error('[Users] POST /me/dnd error:', err.message);
+      return res.status(500).json({ error: 'Failed to update DnD settings' });
+    }
+  }
+);
+
+/**
+ * POST /api/emails/:id/read
+ * Mark an email as read
+ */
+app.post(
+  '/api/emails/:id/read',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const id = req.params.id as string;
+
+      const email = await prisma.email.findUnique({ where: { id } });
+      if (!email || email.userId !== userId) return res.status(404).json({ error: 'Email not found' });
+
+      await prisma.email.update({ where: { id }, data: { status: 'READ' } });
+      return res.json({ message: 'Email marked as read' });
+    } catch (err: any) {
+      logger.error('[Emails] POST /:id/read error:', err.message);
+      return res.status(500).json({ error: 'Failed to mark email as read' });
+    }
+  }
+);
+
+/**
+ * POST /api/emails/:id/archive
+ * Archive an email
+ */
+app.post(
+  '/api/emails/:id/archive',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const id = req.params.id as string;
+
+      const email = await prisma.email.findUnique({ where: { id } });
+      if (!email || email.userId !== userId) return res.status(404).json({ error: 'Email not found' });
+
+      await prisma.email.update({ where: { id }, data: { status: 'ARCHIVED' } });
+      logger.info('[Emails] Email archived', { id, userId });
+      return res.json({ message: 'Email archived successfully' });
+    } catch (err: any) {
+      logger.error('[Emails] POST /:id/archive error:', err.message);
+      return res.status(500).json({ error: 'Failed to archive email' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/emails/:id
+ * Permanently delete an email
+ */
+app.delete(
+  '/api/emails/:id',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const id = req.params.id as string;
+
+      const email = await prisma.email.findUnique({ where: { id } });
+      if (!email || email.userId !== userId) return res.status(404).json({ error: 'Email not found' });
+
+      await prisma.email.delete({ where: { id } });
+      logger.info('[Emails] Email deleted', { id, userId });
+      return res.json({ message: 'Email deleted successfully' });
+    } catch (err: any) {
+      logger.error('[Emails] DELETE /:id error:', err.message);
+      return res.status(500).json({ error: 'Failed to delete email' });
+    }
+  }
+);
+
+/**
+ * GET /api/dashboard/heatmap
+ * Returns email volume by hour and day for heatmap visualization
+ */
+app.get(
+  '/api/dashboard/heatmap',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const days = parseInt(req.query.days as string) || 30;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const emails = await prisma.email.findMany({
+        where: { userId, createdAt: { gte: since } },
+        select: { createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Build heatmap: { dayOfWeek: { hour: count } }
+      const heatmap: Record<number, Record<number, number>> = {};
+      for (let d = 0; d < 7; d++) {
+        heatmap[d] = {};
+        for (let h = 0; h < 24; h++) heatmap[d][h] = 0;
+      }
+
+      for (const email of emails) {
+        const d = email.createdAt.getDay();
+        const h = email.createdAt.getHours();
+        heatmap[d][h] = (heatmap[d][h] || 0) + 1;
+      }
+
+      return res.json({ heatmap, totalEmails: emails.length, days });
+    } catch (err: any) {
+      logger.error('[Dashboard] GET /heatmap error:', err.message);
+      return res.status(500).json({ error: 'Failed to generate heatmap' });
+    }
+  }
+);
+
+// Mount all routers
+app.use('/api/rag', ragRouter);
+app.use('/api/ai', aiRouter);
+app.use('/api/tasks', tasksRouter);
+app.use('/api/calendar/events', calendarRouter);
+app.use('/api/expenses', expensesRouter);
+app.use('/api/digests', digestsRouter);
+app.use('/api/notifications', notificationsRouter);
+app.use('/api/feedback', feedbackRouter);
+app.use('/api/integrations', integrationsRouter);
+
 
 // Start Server
 

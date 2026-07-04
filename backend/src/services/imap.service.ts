@@ -218,3 +218,58 @@ export class IMAPService {
     }, delay);
   }
 }
+
+/**
+ * ImapService — static helper for testing IMAP connections.
+ * Wraps IMAPService for use in REST routes without requiring instance management.
+ */
+export class ImapService {
+  /**
+   * Test an IMAP connection with given credentials.
+   * Returns { success: true } on success, or { success: false, error: string } on failure.
+   */
+  public static async testConnection(config: {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    tls: boolean;
+  }): Promise<{ success: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      const imap = new Imap({
+        user: config.user,
+        password: config.password,
+        host: config.host,
+        port: config.port,
+        tls: config.tls,
+        tlsOptions: { rejectUnauthorized: process.env.NODE_ENV === 'production' },
+        connTimeout: 10000,  // 10 second timeout
+        authTimeout: 10000,
+      });
+
+      const cleanup = (success: boolean, error?: string) => {
+        try { imap.destroy(); } catch (_) {}
+        resolve({ success, error });
+      };
+
+      imap.once('ready', () => {
+        cleanup(true);
+      });
+
+      imap.once('error', (err: any) => {
+        cleanup(false, err.message || 'IMAP connection failed');
+      });
+
+      // Timeout safety net
+      const timer = setTimeout(() => {
+        cleanup(false, 'Connection timed out after 10 seconds');
+      }, 11000);
+
+      imap.once('ready', () => clearTimeout(timer));
+      imap.once('error', () => clearTimeout(timer));
+
+      imap.connect();
+    });
+  }
+}
+

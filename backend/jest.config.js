@@ -16,4 +16,13 @@ module.exports = {
       diagnostics: false,
     }],
   },
+  // Transform ESM-only packages that cause "Unexpected token 'export'" errors
+  // jose is an ESM dependency of firebase-admin/jwks-rsa
+  transformIgnorePatterns: [
+    '/node_modules/(?!(jose|jwks-rsa|@firebase|firebase-admin)/)',
+  ],
+  // Mock firebase-admin in tests to avoid ESM transform issues
+  moduleNameMapper: {
+    '^firebase-admin/(.*)$': '<rootDir>/src/__mocks__/firebase-admin.ts',
+  },
 };

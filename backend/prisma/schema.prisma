@@ -8,26 +8,34 @@ generator client {
 }
 
 model User {
-  id           String        @id @default(uuid())
-  email        String        @unique
-  passwordHash String
-  createdAt     DateTime       @default(now())
-  emails        Email[]
-  settings      UserSettings?
-  emailAccounts EmailAccount[]
-  webhooks      WebhookEndpoint[]
-  rules         Rule[]
+  id             String           @id @default(uuid())
+  email          String           @unique
+  passwordHash   String
+  createdAt      DateTime         @default(now())
+  emails         Email[]
+  settings       UserSettings?
+  emailAccounts  EmailAccount[]
+  webhooks       WebhookEndpoint[]
+  rules          Rule[]
   integrations   Integration[]
   calendarEvents CalendarEvent[]
+  notifications  Notification[]
+  digests        Digest[]
+  expenses       Expense[]
+  reminders      Reminder[]
+  feedbacks      UserFeedback[]
 }
 
 model UserSettings {
-  id        String  @id @default(uuid())
-  theme     String  @default("dark")
-  signature String?
-  autoReply Boolean @default(false)
-  telegramChatId String?
-  telegramEnabled Boolean @default(false)
+  id              String   @id @default(uuid())
+  theme           String   @default("dark")
+  signature       String?
+  autoReply       Boolean  @default(false)
+  telegramChatId  String?
+  telegramEnabled Boolean  @default(false)
+  dndEnabled      Boolean  @default(false)
+  dndStart        String?  // e.g. "22:00"
+  dndEnd          String?  // e.g. "08:00"
 
   userId    String  @unique
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -211,5 +219,86 @@ model CalendarEvent {
 
   @@index([userId])
   @@index([emailId])
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  userId      String
+  emailId     String?
+  merchant    String?
+  amount      Float?
+  currency    String?  @default("USD")
+  category    String?
+  date        DateTime?
+  rawData     Json?
+  createdAt   DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("expenses")
+}
+
+model Digest {
+  id          String   @id @default(uuid())
+  userId      String
+  type        String   @default("daily") // 'daily' | 'weekly'
+  content     String
+  emailCount  Int      @default(0)
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("digests")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // 'email_received' | 'action_item' | 'digest' | 'system'
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+model Reminder {
+  id          String   @id @default(uuid())
+  userId      String
+  emailId     String?
+  title       String
+  dueAt       DateTime
+  isSent      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([dueAt])
+  @@map("reminders")
+}
+
+model UserFeedback {
+  id            String   @id @default(uuid())
+  userId        String
+  emailId       String?
+  feedbackType  String   // 'thumbs_up' | 'thumbs_down'
+  feature       String?  // 'classify' | 'summarize' | 'reply' | 'extract_actions'
+  comment       String?
+  createdAt     DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_feedback")
 }
 

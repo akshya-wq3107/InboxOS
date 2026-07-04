@@ -1060,4 +1060,36 @@ If there are no explicit, concrete tasks, return an empty array.`;
     }
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
   }
+
+  /**
+   * Generate a text reply or completion from AI given a prompt.
+   * Used by email reply generation, expense extraction, and digest generation.
+   */
+  public static async generateReply(prompt: string): Promise<string> {
+    const provider = process.env.AI_PROVIDER || 'openai';
+
+    try {
+      if (provider === 'gemini') {
+        const gemini = this.getGemini();
+        const response = await gemini.models.generateContent({
+          model: 'gemini-1.5-flash',
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        });
+        return response.text || '';
+      } else {
+        const openai = this.getOpenAI();
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 1500,
+          temperature: 0.7,
+        });
+        return response.choices[0]?.message?.content || '';
+      }
+    } catch (err: any) {
+      // Fallback: return a generic message if AI is unavailable
+      throw new Error(`AI generateReply failed: ${err.message}`);
+    }
+  }
 }
+
