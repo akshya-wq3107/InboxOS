@@ -11,6 +11,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
+  loginWithFirebase: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   error: string | null;
   clearError: () => void;
@@ -18,9 +19,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +62,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } catch (err) {
-        console.warn('[AuthContext] Backend server unreachable. Falling back to local session checking.');
+        console.warn(
+          '[AuthContext] Backend server unreachable. Falling back to local session checking.'
+        );
         const localUser = localStorage.getItem('inboxos_user');
         if (localUser) {
           setUser(JSON.parse(localUser));
@@ -100,8 +105,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(authenticatedUser);
       localStorage.setItem('inboxos_user', JSON.stringify(authenticatedUser));
     } catch (err: any) {
-      console.warn('[AuthContext] API Login failed, attempting offline demo fallback...', err.message);
-      
+      console.warn(
+        '[AuthContext] API Login failed, attempting offline demo fallback...',
+        err.message
+      );
+
       // Offline fallback: if backend is down, allow any email with password length >= 6 for testing/demo
       if (password.length >= 6) {
         const mockUser = {
@@ -111,7 +119,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(mockUser);
         localStorage.setItem('inboxos_user', JSON.stringify(mockUser));
       } else {
-        setError(err.message || 'Network error, and password must be at least 6 characters for demo bypass.');
+        setError(
+          err.message ||
+            'Network error, and password must be at least 6 characters for demo bypass.'
+        );
         throw err;
       }
     } finally {
@@ -139,17 +150,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const data = await response.json();
-      
+
       // Auto login user after registration
       const authenticatedUser = {
         id: data.user.id,
         email: data.user.email,
       };
-      
+
       setUser(authenticatedUser);
       localStorage.setItem('inboxos_user', JSON.stringify(authenticatedUser));
     } catch (err: any) {
-      console.warn('[AuthContext] API Register failed, attempting offline demo fallback...', err.message);
+      console.warn(
+        '[AuthContext] API Register failed, attempting offline demo fallback...',
+        err.message
+      );
 
       if (password.length >= 6) {
         const mockUser = {
@@ -159,9 +173,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(mockUser);
         localStorage.setItem('inboxos_user', JSON.stringify(mockUser));
       } else {
-        setError(err.message || 'Network error, and password must be at least 6 characters for demo bypass.');
+        setError(
+          err.message ||
+            'Network error, and password must be at least 6 characters for demo bypass.'
+        );
         throw err;
       }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loginWithFirebase = async (idToken: string) => {
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/firebase`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idToken }),
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Firebase authentication failed');
+      }
+
+      const data = await response.json();
+      const authenticatedUser = {
+        id: data.user.id,
+        email: data.user.email,
+      };
+
+      setUser(authenticatedUser);
+      localStorage.setItem('inboxos_user', JSON.stringify(authenticatedUser));
+    } catch (err: any) {
+      console.error('[AuthContext] Firebase Login failed:', err);
+      setError(err.message || 'Firebase login failed');
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -175,7 +228,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         credentials: 'include',
       });
     } catch (err) {
-      console.warn('[AuthContext] Failed to call logout endpoint on backend. Logging out locally.');
+      console.warn(
+        '[AuthContext] Failed to call logout endpoint on backend. Logging out locally.'
+      );
     } finally {
       setUser(null);
       localStorage.removeItem('inboxos_user');
@@ -191,6 +246,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         register,
+        loginWithFirebase,
         logout,
         error,
         clearError,
