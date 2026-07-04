@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc",
     "migrate:dev": "prisma migrate dev",
+    "generate": "prisma generate",
+    "dev": "ts-node src/server.ts",
     "test:classify": "ts-node src/test-classifier.ts",
     "test:summary": "ts-node src/test-summary.ts",
     "test:actions": "ts-node src/test-action-items.ts",

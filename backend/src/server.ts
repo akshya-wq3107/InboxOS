@@ -1107,7 +1107,7 @@ app.get(
       const hooks = await prisma.webhookEndpoint.findMany({
         where: { userId },
       });
-      const formatted = hooks.map((h) => ({
+      const formatted = hooks.map((h: any) => ({
         id: h.id,
         targetUrl: h.targetUrl,
         events: JSON.parse(h.events),
@@ -1630,7 +1630,7 @@ app.put(
         validation.data;
 
       // Run delete-then-create inside a transaction
-      const updatedRule = await prisma.$transaction(async (tx) => {
+      const updatedRule = await prisma.$transaction(async (tx: any) => {
         await tx.ruleCondition.deleteMany({ where: { ruleId: id } });
         await tx.ruleAction.deleteMany({ where: { ruleId: id } });
 
