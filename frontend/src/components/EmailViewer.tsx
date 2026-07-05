@@ -618,6 +618,50 @@ export const EmailViewer: React.FC<EmailViewerProps> = ({
               </div>
             </div>
 
+            {/* Extracted Deadlines */}
+            {email.analysis?.deadlines && email.analysis.deadlines.length > 0 && (
+              <div className="space-y-2" style={{ borderTop: '1px solid var(--color-ink)', paddingTop: '16px' }}>
+                <h4
+                  className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5"
+                  style={{ color: '#666', fontFamily: 'var(--font-body)' }}
+                >
+                  <Calendar size={11} style={{ color: 'var(--color-accent-cta)' }} />
+                  <span>Deadlines</span>
+                </h4>
+                <div className="space-y-2">
+                  {email.analysis.deadlines.map((deadlineStr: string, idx: number) => {
+                    const formattedDate = (() => {
+                      try {
+                        const date = new Date(deadlineStr);
+                        if (isNaN(date.getTime())) return deadlineStr;
+                        return date.toLocaleString();
+                      } catch {
+                        return deadlineStr;
+                      }
+                    })();
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-3 p-3 transition-all"
+                        style={{
+                          backgroundColor: 'var(--color-surface)',
+                          border: '1px solid var(--color-ink)',
+                          boxShadow: '2px 2px 0 var(--color-ink)',
+                        }}
+                      >
+                        <Calendar size={14} className="shrink-0" style={{ color: 'var(--color-accent-cta)' }} />
+                        <div className="min-w-0">
+                          <p className="text-xs leading-normal font-bold" style={{ color: 'var(--color-ink)', fontFamily: 'var(--font-body)' }}>
+                            {formattedDate}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Extracted Action Items */}
             <div className="space-y-2" style={{ borderTop: '1px solid var(--color-ink)', paddingTop: '16px' }}>
               <h4

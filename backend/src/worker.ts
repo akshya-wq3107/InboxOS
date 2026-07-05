@@ -90,8 +90,29 @@ export async function registerWorkerHandlers() {
           },
         });
 
+        // 3.5 Create or update EmailAnalysis record
+        await prisma.emailAnalysis.upsert({
+          where: { emailId: email.id },
+          create: {
+            emailId: email.id,
+            category: result.category,
+            confidenceScore: result.confidence,
+            deadlines: result.deadlines || [],
+            priorityScore: result.category === 'urgent' ? 90.0 : 50.0,
+            urgencyScore: result.category === 'urgent' ? 90.0 : 50.0,
+            actionabilityScore: 50.0,
+            aiProvider: process.env.AI_PROVIDER || 'openai',
+          },
+          update: {
+            category: result.category,
+            confidenceScore: result.confidence,
+            deadlines: result.deadlines || [],
+            aiProvider: process.env.AI_PROVIDER || 'openai',
+          },
+        });
+
         logger.info(
-          '[Worker] Email classification updated successfully in database',
+          '[Worker] Email classification and analysis updated successfully in database',
           { emailId }
         );
 

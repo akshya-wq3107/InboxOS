@@ -1335,6 +1335,7 @@ app.get('/api/emails/:id', requireAuth, async (req: AuthenticatedRequest, res: R
       where: { id },
       include: {
         actionItems: true,
+        analysis: true,
         thread: {
           include: {
             emails: {

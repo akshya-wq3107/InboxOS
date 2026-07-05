@@ -33,8 +33,9 @@ export interface ClassificationResult {
 }
 
 export interface ActionItemResult {
-  taskDescription: string;
-  deadline: string | null;
+  task?: string;
+  taskDescription?: string;
+  deadline?: string | null;
 }
 
 export class AIService {
@@ -71,6 +72,44 @@ export class AIService {
    * Classifies an email's subject and body using the active provider model.
    * Leverages Structured Outputs (JSON Schema) and exponential backoff retry for rate limits.
    */
+  private static extractDatesWithChrono(
+    subject: string,
+    body: string
+  ): string[] {
+    const parsedDeadlines: string[] = [];
+    const seen = new Set<string>();
+
+    const parseText = (text: string) => {
+      if (!text) return;
+      const parsed = chrono.parse(text);
+      for (const ref of parsed) {
+        const date = ref.date();
+        const hasHour = ref.start.isCertain('hour');
+        let dateStr: string;
+        if (!hasHour) {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          dateStr = `${year}-${month}-${day}T23:59:00Z`;
+        } else {
+          dateStr = date.toISOString();
+        }
+        if (!seen.has(dateStr)) {
+          seen.add(dateStr);
+          parsedDeadlines.push(dateStr);
+        }
+      }
+    };
+
+    parseText(subject);
+    parseText(body);
+    return parsedDeadlines;
+  }
+
+  /**
+   * Classifies an email's subject and body using the active provider model.
+   * Leverages Structured Outputs (JSON Schema) and exponential backoff retry for rate limits.
+   */
   public static async classifyEmail(
     subject: string,
     body: string
@@ -81,7 +120,7 @@ export class AIService {
       return {
         category: heuristicCategory,
         confidence: 1.0,
-        deadlines: [],
+        deadlines: this.extractDatesWithChrono(subject, body),
       };
     }
 
@@ -106,21 +145,19 @@ export class AIService {
 
     // Chrono-node fallback if LLM misses dates
     if (!result.deadlines || result.deadlines.length === 0) {
-      const parsedDeadlines: string[] = [];
-      const parsed = chrono.parse(body);
-      for (const ref of parsed) {
-        const date = ref.date();
-        const hasHour = ref.start.isCertain('hour');
-        if (!hasHour) {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          parsedDeadlines.push(`${year}-${month}-${day}T23:59:00Z`);
-        } else {
-          parsedDeadlines.push(date.toISOString());
+      result.deadlines = this.extractDatesWithChrono(subject, body);
+    } else {
+      // Ensure LLM deadlines are unique and formatted correctly
+      const seen = new Set<string>();
+      const formatted: string[] = [];
+      for (const d of result.deadlines) {
+        const normalized = this.normalizeIsoDate(d);
+        if (normalized && !seen.has(normalized)) {
+          seen.add(normalized);
+          formatted.push(normalized);
         }
       }
-      result.deadlines = parsedDeadlines;
+      result.deadlines = formatted;
     }
 
     return result;
@@ -557,9 +594,17 @@ Provide a confidence score between 0.0 and 1.0. Also, extract all deadlines ment
 
     // Chrono-node fallback for missing deadlines on action items
     for (const item of items) {
+      // Normalize task and taskDescription fields to be mutually populated
+      if (item.task && !item.taskDescription) {
+        item.taskDescription = item.task;
+      }
+      if (item.taskDescription && !item.task) {
+        item.task = item.taskDescription;
+      }
+
       if (!item.deadline || item.deadline.trim() === '') {
         // Try parsing the task description first
-        let fallbackDate = this.parseDateWithChrono(item.taskDescription);
+        let fallbackDate = this.parseDateWithChrono(item.taskDescription || item.task || '');
         if (!fallbackDate) {
           // If not found in task description, parse the email body
           fallbackDate = this.parseDateWithChrono(body);
@@ -582,7 +627,7 @@ Provide a confidence score between 0.0 and 1.0. Also, extract all deadlines ment
     body: string
   ): Promise<string[]> {
     const items = await this.extractActionItems(subject, body);
-    return items.map((item) => item.taskDescription);
+    return items.map((item) => item.taskDescription || item.task || '');
   }
 
   private static parseDateWithChrono(text: string): string | null {
@@ -627,6 +672,7 @@ Provide a confidence score between 0.0 and 1.0. Also, extract all deadlines ment
 
     const systemPrompt = `You are an expert AI email task extraction assistant. Your job is to analyze the email subject line and body text, and extract all explicit, concrete tasks (e.g., 'Send the report by Friday') mentioned.
 For each task, also extract any mentioned deadline as an ISO 8601 string (e.g., '2026-07-15T23:59:00Z'). If no deadline is mentioned, return an empty string for the deadline.
+Populate both the 'task' and 'taskDescription' properties with the description of the task.
 Do not infer, assume, or fabricate tasks or deadlines that are not explicitly and concretely requested.
 If there are no explicit, concrete tasks, return an empty array.`;
 
@@ -657,6 +703,9 @@ If there are no explicit, concrete tasks, return an empty array.`;
                     items: {
                       type: 'object',
                       properties: {
+                        task: {
+                          type: 'string',
+                        },
                         taskDescription: {
                           type: 'string',
                         },
@@ -664,7 +713,7 @@ If there are no explicit, concrete tasks, return an empty array.`;
                           type: 'string',
                         },
                       },
-                      required: ['taskDescription', 'deadline'],
+                      required: ['task', 'taskDescription', 'deadline'],
                       additionalProperties: false,
                     },
                   },
@@ -725,6 +774,7 @@ If there are no explicit, concrete tasks, return an empty array.`;
 
     const systemInstruction = `You are an expert AI email task extraction assistant. Your job is to analyze the email subject line and body text, and extract all explicit, concrete tasks (e.g., 'Send the report by Friday') mentioned.
 For each task, also extract any mentioned deadline as an ISO 8601 string (e.g., '2026-07-15T23:59:00Z'). If no deadline is mentioned, return an empty string for the deadline.
+Populate both the 'task' and 'taskDescription' properties with the description of the task.
 Do not infer, assume, or fabricate tasks or deadlines that are not explicitly and concretely requested.
 If there are no explicit, concrete tasks, return an empty array.`;
 
@@ -750,6 +800,9 @@ If there are no explicit, concrete tasks, return an empty array.`;
                   items: {
                     type: 'OBJECT',
                     properties: {
+                      task: {
+                        type: 'STRING',
+                      },
                       taskDescription: {
                         type: 'STRING',
                       },
@@ -757,7 +810,7 @@ If there are no explicit, concrete tasks, return an empty array.`;
                         type: 'STRING',
                       },
                     },
-                    required: ['taskDescription', 'deadline'],
+                    required: ['task', 'taskDescription', 'deadline'],
                   },
                 },
               },

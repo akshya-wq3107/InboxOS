@@ -23,6 +23,7 @@ export interface EmailData {
     actionability_score: number;
     summary: string;
     suggested_reply?: string;
+    deadlines?: string[];
   };
 }
 
