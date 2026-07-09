@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import axios from 'axios';
 import { logger } from '../utils/logger';
 import {
   TelegramConfig,
@@ -116,15 +117,11 @@ export class TelegramBotService {
     }
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3-second timeout
-
-      const res = await fetch(`${this.baseUrl}/getMe`, {
-        signal: controller.signal,
+      const res = await axios.get(`${this.baseUrl}/getMe`, {
+        timeout: 3000,
       });
-      clearTimeout(timeoutId);
 
-      if (!res.ok) {
+      if (res.status !== 200) {
         return {
           connected: true,
           webhookActive: TelegramConfig.mode === 'webhook',
@@ -229,18 +226,17 @@ export class TelegramBotService {
     const maxAttempts = 5;
 
     try {
-      const response = await fetch(url, {
-        method: 'POST',
+      const response = await axios.post(url, body, {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(body),
+        validateStatus: () => true, // Don't throw on HTTP status codes
       });
 
       if (response.status === 429) {
-        const retryAfterHeader = response.headers.get('retry-after');
+        const retryAfterHeader = response.headers['retry-after'];
         const retryAfterSeconds = retryAfterHeader
-          ? parseInt(retryAfterHeader, 10)
+          ? parseInt(Array.isArray(retryAfterHeader) ? retryAfterHeader[0] : retryAfterHeader, 10)
           : Math.pow(2, attempt);
         logger.warn(
           `[TelegramBot] Rate limited (429) on API call "${method}". Retrying in ${retryAfterSeconds}s...`
@@ -254,8 +250,7 @@ export class TelegramBotService {
         }
       }
 
-      const data = await response.json();
-      return data;
+      return response.data;
     } catch (err: any) {
       logger.error(
         `[TelegramBot] API connection error on "${method}": ${err.message}`
