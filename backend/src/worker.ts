@@ -50,7 +50,13 @@ reminderWorker.on('failed', (job, err) => {
   console.error(`[BullMQ] Reminder Job ${job?.id} failed with error:`, err);
 });
 
+let isRegistered = false;
+
 export async function registerWorkerHandlers() {
+  if (isRegistered) {
+    return;
+  }
+  isRegistered = true;
   logger.info('Registering email processing workers...');
 
   // Subscribe to 'email.received' topic

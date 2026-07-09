@@ -2428,6 +2428,11 @@ const server = app.listen(PORT, () => {
   TelegramBotService.init().catch((err) => {
     logger.error('Failed to initialize Telegram Bot Service:', err);
   });
+
+  // Register inline worker handlers to handle BullMQ/Redis tasks
+  registerWorkerHandlers().catch((err) => {
+    logger.error('Failed to register inline worker handlers:', err);
+  });
   
   // Register EventBus fallback handler AFTER server is listening
   // to avoid blocking startup if Redis is slow or unavailable.
